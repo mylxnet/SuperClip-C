@@ -24,7 +24,8 @@ param(
 )
 # ASCII-only comments: PS 5.1 decodes BOM-less UTF-8 as GBK and a CJK lead byte can eat
 # the newline, silently merging param lines.
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# artifacts (exe + screenshots) stay in ../build-mingw; only the .ps1 drivers live here
+$dir = Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw"
 $targetExe = Join-Path $dir "PasteTarget.exe"
 $scExe = Join-Path $dir "SuperClip.exe"
 

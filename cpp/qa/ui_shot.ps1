@@ -1,6 +1,8 @@
 param([string]$Out)
-if (-not $Out) { $Out = Join-Path $PSScriptRoot "shot6.png" }
-$exe = Join-Path $PSScriptRoot "SuperClip.exe"
+# artifacts (exe + screenshots) stay in ../build-mingw; only the .ps1 drivers live here
+$build = Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw"
+if (-not $Out) { $Out = Join-Path $build "shot6.png" }
+$exe = Join-Path $build "SuperClip.exe"
 $existing = Get-Process SuperClip -ErrorAction SilentlyContinue
 if ($existing) { $p = $existing } else { $p = Start-Process -FilePath $exe -PassThru }
 Start-Sleep -Seconds 2

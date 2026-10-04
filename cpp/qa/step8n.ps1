@@ -5,7 +5,8 @@ param(
 )
 # Full Notepad scenario in one process: caret focus, raise, filter, double-click paste,
 # then read the document back through Ctrl+A / Ctrl+C (real app round trip).
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# artifacts (exe + screenshots) stay in ../build-mingw; only the .ps1 drivers live here
+$dir = Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw"
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System; using System.Runtime.InteropServices; using System.Text;

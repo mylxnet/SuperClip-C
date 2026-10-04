@@ -1,4 +1,6 @@
-param([int]$X = 1730, [int]$Y = 352, [string]$Out = "E:/qcode/superclip/cpp/build-mingw/hover.png", [int]$RegionY = -1, [int]$RegionH = 420)
+param([int]$X = 1730, [int]$Y = 352, [string]$Out = "", [int]$RegionY = -1, [int]$RegionH = 420)
+# screenshots go to ../build-mingw (only the .ps1 drivers live in cpp/qa)
+if ($Out -eq "") { $Out = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw") "hover.png" }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type @"

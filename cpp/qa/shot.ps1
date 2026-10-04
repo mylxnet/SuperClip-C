@@ -1,6 +1,6 @@
 # 截取 SuperClip 主窗客户区，存 PNG（供模型自查绘制结果）
 param([string]$Out = "")
-if (-not $Out) { $Out = Join-Path $PSScriptRoot "shot.png" }
+if (-not $Out) { $Out = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw") "shot.png" }
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;

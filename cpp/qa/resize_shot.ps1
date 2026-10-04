@@ -1,4 +1,6 @@
-param([int]$W = 340, [int]$H = 500, [string]$Out = "E:/qcode/superclip/cpp/build-mingw/resized.png")
+param([int]$W = 340, [int]$H = 500, [string]$Out = "")
+# screenshots go to ../build-mingw (only the .ps1 drivers live in cpp/qa)
+if ($Out -eq "") { $Out = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw") "resized.png" }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type @"

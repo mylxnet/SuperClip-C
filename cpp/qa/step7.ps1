@@ -14,7 +14,8 @@ param(
 )
 # Comments stay ASCII-only on purpose: PowerShell 5.1 decodes BOM-less UTF-8 as GBK,
 # and a trailing CJK lead byte can swallow the newline, silently merging param lines.
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# artifacts (exe + screenshots) stay in ../build-mingw; only the .ps1 drivers live here
+$dir = Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw"
 $exe = Join-Path $dir "SuperClip.exe"
 if (-not (Get-Process SuperClip -ErrorAction SilentlyContinue)) { Start-Process -FilePath $exe | Out-Null }
 Start-Sleep -Seconds 2

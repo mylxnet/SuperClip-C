@@ -410,10 +410,10 @@ if (GetLastError() == ERROR_ALREADY_EXISTS) { ActivateExisting(); return 0; }
 | `WM_MOUSEMOVE` | `TrackMouseEvent(TME_LEAVE)` 维护 hover；命中按钮改 `SetCursor(IDI_HAND)` |
 | `WM_MOUSELEAVE` | 清 hover 并重绘受影响行 |
 | `WM_MOUSEWHEEL` | `GET_WHEEL_DELTA_WPARAM/WHEEL_DELTA * SPI_GETWHEELSCROLLLINES * 行高`，钳制 scroll |
-| `WM_KEYDOWN` | `VK_SPACE`：`mode==Quick && focusOwner==List && Selected()` → `DoPaste(sel,true)` 并 `return 0`；`VK_ESCAPE`：点选中→取消，否则不隐藏（契约未定义关闭行为） |
+| `WM_KEYDOWN` | `VK_SPACE`：`mode==Quick && focusOwner==List && Selected()` → `DoPaste(sel,true)` 并 `return 0`；`VK_ESCAPE`：点选中→取消，否则不隐藏（契约未定义关闭行为）；`VK_APPS` → `return DefWindowProcW(...)`，由系统合成 `WM_CONTEXTMENU`（`lParam=-1,-1`）。**`VK_F10` 不放行**（2026-10-04 决议：本窗无菜单栏，单按 F10 进系统菜单模式的后果不可见即不可测，只把实机验过的行为上线）；其余按键一律 `return 0` 吞掉 |
 | `WM_CHAR` | `focusOwner==List` 时吞掉可打印字符（防无关按键音），仅放行 Space/Esc/Enter |
 | `WM_COMMAND` | `EN_CHANGE`（搜索框）→ 重启 300ms 防抖；`EN_KILLFOCUS/EN_SETFOCUS` → 更新 `focusOwner`；自绘按钮命令 ID |
-| `WM_CONTEXTMENU` | `picker` 未激活时弹主菜单；`OriginalSource==EDIT` 交由 `DefWindowProc`（原生编辑菜单） |
+| `WM_CONTEXTMENU` | `picking()` 中直接吞掉（点选期间不弹菜单）。否则 `ShowMainMenu()`：三项 `TrackPopupMenuEx(TPM_RETURNCMD)`（粘贴模式 / 复制模式 / 使用帮助，动态文案）。`lParam==-1,-1`（键盘 `VK_APPS`）→ 锚点取列表区左上换算成屏幕坐标。搜索框是**真 `EDIT` 子窗**，它在自己区域内直接收到 `WM_CONTEXTMENU` 并走系统默认（原生编辑菜单，实机 15 项），主窗这条分支碰不到它，因此无需 `OriginalSource` 判定 |
 | `WM_TIMER` | 见 §6.3 分派 |
 | `WM_APP_SEARCH_ENTER` | `EDIT` 子类窗回投：回车把按键归属交回列表（`focusOwner=List`+`SetFocus(主窗)`） |
 | `WM_APP_PASTE_DONE` | `PasteService` 结果回投 → `OnPasteDone(ok)`：`ok` 才 `Store::PasteDone`（灰显/沉底/连贴跳转），随后 `ArmPasteGuard()` 起 1000ms 兜底 |
@@ -503,7 +503,8 @@ enum class FocusOwner { List, SearchEdit };   // EDIT 获焦经 EN_SETFOCUS/EN_K
 | 清除/复位/靶心/标题栏按钮 | 全自绘 + `HitZone` | 无子 HWND，减少 NC 处理。**清除**（2026-10-04 C12）只删非收藏区、无确认框，删完在状态栏给 3s 提示"已清除 N 条，收藏 M 条永久保留"（复用 `ID_STATUS_HINT`）——收藏在【全部】视图本就不可见，不提示会看起来按了没反应 |
 | 置顶 | `MainWindow::topmost_` **默认 true**，`DockToWorkArea` 启动即 `HWND_TOPMOST`；★ 按钮切 `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`，开启态在图标下画青色下划线 | 2026-10-04 用户指定"应用打开默认浮于各窗口最上层"（原 `false` 是步骤 8 遗留）。`Topmost` 落盘要等步骤 10 `SettingsService`，本轮固定"每次启动都开" |
 | 列表 | 全自绘 | 无 UIA（N1） |
-| 帮助窗 | 独立无边框模态 `HWND`，D2D 绘制 9 步 + 上/下/关闭按钮 | 入口：右键菜单「使用帮助」（§8） |
+| 主窗右键菜单 | `MainWindow::ShowMainMenu()`：`CreatePopupMenu` 三项（粘贴模式 / 复制模式 / 使用帮助）+ `TrackPopupMenuEx(TPM_RETURNCMD\|TPM_LEFTALIGN\|TPM_TOPALIGN)` | 步骤 11（2026-10-04）。**严格三项**是用户裁定：置顶已有标题栏 ★，清除/复位带确认链、误触代价与开关不对等，不进菜单。项文字按当前状态生成并写明点击后果（"粘贴模式：普通（点此切到快速）"），取消即零改动。与筛选菜单同一套 `SetForegroundWindow` 前置 + `PostMessage(WM_NULL)` 收尾（主窗是 `WS_POPUP` 非激活窗）。复制模式点击后 `SaveCopyMode()` 即落盘（§8.3） |
+| 帮助窗 | 独立无边框 `WS_POPUP`（`WS_EX_TOOLWINDOW\|TOPMOST`、owner=主窗），D2D 绘制 9 步 + 上一步/下一步/关闭按钮 | 入口：右键菜单「使用帮助」。420×300 逻辑px，贴主窗**左侧**（放不下回落右侧/居中，再 `FitRectToDesktop`）。模态用 `EnableWindow(主窗, FALSE)`，**不起嵌套消息循环**；首末位钳住且按钮禁用，重开回 `1 / 9`；`Esc`/关闭 还原主窗并 `SetFocus`。步骤 11 实机已验翻页（鼠标与 `VK_RIGHT`）、钳位、模态、还原；DPI 150%/200% 排版未验 |
 
 ---
 
@@ -692,7 +693,7 @@ set_target_properties(SuperClip PROPERTIES VS_DPI_AWARE "PerMonitorV2")
 | 8 | `PasteService` + `DoPaste` 编排 + 目标捕获 | AC-2/6 三应用实机；1000ms 守护期间复制不重复入列 |
 | 9 | `ProcessPicker`（含 T2） | 点选 Excel 不改变其选区；中途锁屏光标不残留；红/绿状态正确 |
 | 10 | `SettingsService` + 位置/模式恢复 | 重启后位置、模式、置顶、绑定进程名恢复；拔掉副显示器回默认停靠。**2026-10-04 实机结论**：§9.6 四例绿（40 例/214 断言/0 失败）；`Left100/Top120/400×520` 精确还原并原值回写；`Left9000/Top7000` 回默认停靠 `1540,216`；无文件首启＝右停靠+`topmost=True`+普通模式+全部+未绑定，退出时才建默认文件；唯一候选恢复绑定（日志+绿靶心+"已绑定：PasteTarget"）；同名两窗一律不绑（红靶心+状态栏提示）；★ 关→`WS_EX_TOPMOST` 位消失且**立即**落盘→重启仍关→可开回；点模式文字→`PasteMode` 立即落盘。**未验证**：筛选经模态菜单变更后的 `FilterType` 落盘；`SplitSingleColumn` 无 UI 入口 |
-| 11 | `HelpWindow` + 右键菜单 + 气泡 | 9 步引导可翻页；菜单项文案动态显示当前模式 |
+| 11 | `HelpWindow` + 右键菜单 + 气泡 | 9 步引导可翻页；菜单项文案动态显示当前模式。**2026-10-04 实机结论**：三项菜单在鼠标右键与 `VK_APPS`（锚列表区左上）两路都能弹出，4 项含分隔线、文字随状态翻转（"粘贴模式：普通（点此切到快速）"）；选「粘贴模式」`PasteMode` 0→1→0 落盘、选「复制模式」`SplitSingleColumn` false→true 落盘、取消零改动；帮助窗在主窗左侧 12 逻辑px、420×300、`enabled=False` 证明模态、点「下一步」与 `VK_RIGHT` 均可翻页、`1/9` 与 `9/9` 钳住且按钮禁用、重开回 `1/9`、`Esc` 与「关闭」都还原主窗；搜索框内右键仍是原生 `EDIT` 菜单（15 项）；主窗无回归。**未验证**：① 点选期间不弹菜单——代码有分支，但驱动无法在盲态安全右键（会点到别家窗口），未跑；② `Shift+F10` 按决议不实现；③ 帮助窗 150%/200% DPI 排版（挂步骤 6 遗留）；④ `true→false` 的反向落盘未单独复验 |
 | 12 | 打包脚本 + 干净 VM 验收 | AC-7/8；`dumpbin /dependents` 仅 §附录白名单 DLL |
 
 判据纪律：每步完成后只报"已验证项 + 未验证项"，未实机验证的 UI/粘贴行为一律标注**未验证**，不得凭代码推断宣称通过。

@@ -1,6 +1,6 @@
 # M1 冒烟：单实例 / 剪贴板采集 / 持久化（临时脚本，运行后可删）
 $ErrorActionPreference = "Continue"
-$exe = Join-Path $PSScriptRoot "SuperClip.exe"
+$exe = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw") "SuperClip.exe"
 
 Get-Process SuperClip -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500

@@ -1,5 +1,6 @@
 param([int]$Wheel = 0, [string]$Out = "shot_b.png")
-$dir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# artifacts (exe + screenshots) stay in ../build-mingw; only the .ps1 drivers live here
+$dir = Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw"
 $exe = Join-Path $dir "SuperClip.exe"
 $existing = Get-Process SuperClip -ErrorAction SilentlyContinue
 if (-not $existing) { Start-Process -FilePath $exe | Out-Null }

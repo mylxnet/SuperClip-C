@@ -1,4 +1,5 @@
-$exe = Join-Path $PSScriptRoot "SuperClip.exe"
+# artifacts (exe + screenshots) stay in ../build-mingw; only the .ps1 drivers live here
+$exe = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "build-mingw") "SuperClip.exe"
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
