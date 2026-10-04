@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperClip 超级剪贴板 — 设计规范文档</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --ink:#e6e9ef; --muted:#9aa3b2;
+    --line:#272c36; --accent:#4f8cff; --accent2:#1e88e5; --ok:#37c98b; --warn:#f5b14c; --bad:#ff6b6b;
+    --code:#11141a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;line-height:1.65;font-size:15px}
+  .wrap{max-width:980px;margin:0 auto;padding:40px 28px 80px}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:.5px}
+  h2{font-size:22px;margin:42px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--line);color:#fff}
+  h3{font-size:17px;margin:26px 0 10px;color:var(--accent)}
+  h4{font-size:15px;margin:18px 0 8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+  p{margin:10px 0}
+  .sub{color:var(--muted);margin-top:0}
+  code{background:var(--code);padding:2px 6px;border-radius:5px;font-family:"JetBrains Mono",Consolas,monospace;font-size:13px;color:#ffd479}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:16px;overflow:auto;font-family:"JetBrains Mono",Consolas,monospace;font-size:13px;line-height:1.55}
+  pre code{background:none;padding:0;color:#d6deeb}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel);color:#fff;font-weight:600}
+  tr:nth-child(even) td{background:#13161d}
+  .tag{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;margin-right:6px}
+  .t-ok{background:rgba(55,201,139,.15);color:var(--ok)}
+  .t-warn{background:rgba(245,177,76,.15);color:var(--warn)}
+  .t-bad{background:rgba(255,107,107,.15);color:var(--bad)}
+  .t-info{background:rgba(79,140,255,.15);color:var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:16px 0}
+  .fr{font-family:"JetBrains Mono",monospace;color:var(--accent2);font-weight:700}
+  ul,ol{margin:10px 0;padding-left:24px}
+  li{margin:5px 0}
+  .ascii{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:14px;font-family:"JetBrains Mono",Consolas,monospace;font-size:12.5px;white-space:pre;color:#cfe3ff;overflow:auto}
+  .note{border-left:3px solid var(--accent);padding:8px 14px;background:rgba(79,140,255,.07);border-radius:0 8px 8px 0;margin:14px 0;color:#cdd6e6}
+  .warn{border-left:3px solid var(--warn);background:rgba(245,177,76,.08)}
+  .meta{display:flex;gap:18px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-top:10px}
+  .meta b{color:var(--ink)}
+  .pill{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>SuperClip 超级剪贴板</h1>
+<p class="sub">完整设计规范（Design Specification）· 可直接交付 AI / 开发者从零实现</p>
+<div class="meta">
+  <span>文档版本 <b>v1.2</b></span>
+  <span>平台 <b>Windows 10 / 11 (x64)</b></span>
+  <span>形态 <b>桌面应用 · 单文件 exe</b></span>
+  <span>状态 <b>已冻结需求（v1.1 含 §4.4 顺序勘误 C7；v1.2 含收藏显示与清除语义勘误 C10/C12）</b></span>
+</div>
+
+<div class="card">
+<strong>一句话目标：</strong> 一个后台常驻的 Windows 剪贴板增强工具，自动记录复制过的纯文本内容，支持 Excel 表格拆分、搜索、收藏、双粘贴模式，托盘常驻、全局快捷键呼出，最终打包成<strong>不依赖 .NET 运行时的单文件 exe</strong> 分发。
+</div>
+
+<!-- ============ 1. 技术栈 ============ -->
+<h2>1. 技术栈与依赖</h2>
+<table>
+<tr><th>项</th><th>选择</th><th>理由 / 约束</th></tr>
+<tr><td>UI 框架</td><td><span class="pill">WPF</span> (.NET 8)</td><td>原生 Windows、性能稳、可自包含打包</td></tr>
+<tr><td>语言</td><td>C# 12</td><td>.NET 8 默认</td></tr>
+<tr><td>MVVM</td><td>CommunityToolkit.Mvvm 8.2.x</td><td>仅用于 ViewModel 的 <code>[ObservableProperty]</code> / <code>ObservableObject</code>，可跨平台编译</td></tr>
+<tr><td>JSON</td><td>System.Text.Json（内置）</td><td>持久化，无额外依赖</td></tr>
+<tr><td>托盘</td><td>System.Windows.Forms.NotifyIcon</td><td>启用 <code>&lt;UseWindowsForms&gt;true&lt;/UseWindowsForms&gt;</code>，免额外 NuGet</td></tr>
+<tr><td>剪贴板/热键/键入</td><td>P/Invoke user32.dll</td><td>见 §9</td></tr>
+<tr><td>网络</td><td><b>零网络访问</b></td><td>验收标准 8：可用防火墙验证无出站连接</td></tr>
+</table>
+<div class="note warn"><b>构建环境约束：</b>WPF 只能在 Windows 编译。开发/构建机须为 Windows，并执行 <code>dotnet publish -r win-x64 --self-contained</code>。代码本身不依赖任何在线服务。</div>
+
+<!-- ============ 2. 功能总览 ============ -->
+<h2>2. 功能需求清单（FR）</h2>
+<table>
+<tr><th>编号</th><th>模块</th><th>需求</th></tr>
+<tr><td><span class="fr">FR-01</span></td><td>剪贴板历史</td><td>后台监听系统剪贴板，自动记录每次复制的<strong>纯文本</strong>内容（图片/文件不记录）</td></tr>
+<tr><td><span class="fr">FR-02</span></td><td>去重</td><td>基于内容 <strong>SHA-256</strong> 哈希比对；相同内容只保留一条（更新时间戳）</td></tr>
+<tr><td><span class="fr">FR-03</span></td><td>持久化</td><td>记录写入本地 JSON，<strong>重启不丢失</strong>（历史、收藏、已粘贴灰显、排序全部保留）</td></tr>
+<tr><td><span class="fr">FR-04</span></td><td>自动清理</td><td>非收藏记录超过上限（默认 <strong>500</strong>）时，自动删除最旧的（即<strong>非收藏区末尾</strong>项，见 §4.3 顺序不变式、§4.4）</td></tr>
+<tr><td><span class="fr">FR-05</span></td><td>表格拆分</td><td>复制内容含 TSV（制表符 <code>\t</code> 列分隔、<code>\r\n</code>/<code>\n</code> 行分隔）时，按「行→列」拆为独立单元格记录，标注「来自表格：第 X 行 第 Y 列」；纯文本不拆分；若剪贴板同时含 HTML 表格，以 TSV 文本为准</td></tr>
+<tr><td><span class="fr">FR-06</span></td><td>搜索</td><td>顶部搜索框实时过滤，<strong>300ms 防抖</strong>（避免每字符查库）</td></tr>
+<tr><td><span class="fr">FR-07</span></td><td>类型过滤</td><td>支持：全部 / 文本 / 表格单元格 / 收藏</td></tr>
+<tr><td><span class="fr">FR-08</span></td><td>收藏</td><td>每条可 ★/☆ 切换；<strong>收藏项只在【收藏】过滤视图显示</strong>（「全部 / 文本 / 表格单元格」一律剔除，见 §4.3 勘误 C10）；<strong>不参与</strong>自动清理；<strong>不参与</strong>「清除」（见 FR-13）；持久化</td></tr>
+<tr><td><span class="fr">FR-09</span></td><td>普通粘贴模式</td><td><strong>双击</strong>记录 → 该记录<strong>变灰（已粘贴），位置不变</strong></td></tr>
+<tr><td><span class="fr">FR-10</span></td><td>快速粘贴模式</td><td>进入时<strong>默认选中第一条</strong>；<strong>单击</strong>仅切换选中（高亮）；按<strong>空格键</strong>将选中项粘贴到目标光标处 → 变灰并<strong>移到列表最末</strong></td></tr>
+<tr><td><span class="fr">FR-11</span></td><td>粘贴机制</td><td>直接<strong>模拟键入</strong>到目标窗口光标处（写入系统剪贴板 → 激活目标窗口 → 发送 Ctrl+V）；非手动 Ctrl+V</td></tr>
+<tr><td><span class="fr">FR-12</span></td><td>悬浮置顶</td><td>标题栏第 2 个图标切换 <code>TopMost</code>，主窗口浮于所有窗口最上层；再点恢复</td></tr>
+<tr><td><span class="fr">FR-13</span></td><td>清除</td><td>工具栏「清除」按钮 = <strong>清空非收藏区全部记录；收藏条目永久保留，不受「清除」影响</strong>（见 §4.4 勘误 C12）。如需删除某条收藏，先取消收藏（★→☆，该条回到普通视图）再按「清除」</td></tr>
+<tr><td><span class="fr">FR-14</span></td><td>复位</td><td>工具栏「复位」按钮（仅快速模式有意义）= 恢复最初（按时间）顺序 + 清除所有灰显（已粘贴）标记</td></tr>
+<tr><td><span class="fr">FR-15</span></td><td>窗口形态</td><td><strong>系统托盘常驻</strong>：标题栏第 1 图标「收起」= 最小化到托盘继续监听；第 3 图标「关闭」= <strong>彻底退出</strong>程序</td></tr>
+<tr><td><span class="fr">FR-16</span></td><td>全局快捷键</td><td><code>Ctrl + `</code>（反引号，Tab 上方）呼出/隐藏主窗口；窗口隐藏时仍监听剪贴板</td></tr>
+<tr><td><span class="fr">FR-17</span></td><td>序号</td><td>列表每条左侧显示其<strong>当前顺序序号</strong>（1 起）</td></tr>
+<tr><td><span class="fr">FR-18</span></td><td>开机启动</td><td><strong>不做</strong>（用户明确不要）</td></tr>
+</table>
+
+<!-- ============ 3. 数据模型 ============ -->
+<h2>3. 数据模型</h2>
+<p>单条剪贴板记录：</p>
+<pre><code>ClipItem {
+  string   Id           // 唯一标识（GUID），init-only
+  string   Content      // 文本内容，init-only
+  ClipType Type         // Text | TableCell，init-only
+  int?     SourceRow    // 表格单元格行号（1 起），普通文本为 null
+  int?     SourceCol    // 表格单元格列号（1 起）
+  DateTime Timestamp    // 复制时间，init-only
+  string   Hash         // 内容 SHA-256（小写十六进制），用于去重，init-only
+  bool     IsFavorite   // ★/☆，可变，需通知 UI
+  bool     IsPasted     // 已粘贴（灰显），可变，需通知 UI
+  string   SourceLabel  // 只读计算属性："来自表格：第 X 行 第 Y 列" 或 ""
+}</code></pre>
+<div class="note"><code>IsFavorite</code> / <code>IsPasted</code> 变化须实时反映到 UI，应使用支持属性变更通知的实现（如 <code>ObservableObject</code> + <code>[ObservableProperty]</code>，或手写 <code>INotifyPropertyChanged</code>）。</div>
+
+<!-- ============ 4. 核心算法 ============ -->
+<h2>4. 核心算法规范</h2>
+
+<h3>4.1 去重（FR-02）</h3>
+<pre><code>hash = SHA256(content).ToLowerHex()
+if Items.Any(i => i.Hash == hash):
+    remove that item           // 先移除旧副本
+item = new ClipItem { ..., Hash = hash, IsFavorite = oldItem?.IsFavorite ?? false }
+insert item at front of non-favorite region   // 保证收藏始终置顶</code></pre>
+
+<h3>4.2 TSV 表格拆分（FR-05）</h3>
+<pre><code>IsTable(text):  return text.Contains('\t')
+
+Parse(text):
+  normalized = text.Replace("\r\n","\n").Replace('\r','\n').Trim('\n')
+  rows = normalized.Split('\n')
+  for r in 0..rows.Length-1:
+    cols = rows[r].Split('\t')
+    for c in 0..cols.Length-1:
+      if string.IsNullOrEmpty(cols[c]): continue   // 跳过空单元格
+      emit Cell { Content=cols[c], Row=r+1, Col=c+1 }</code></pre>
+<div class="note">行/列均从 <strong>1</strong> 计数。空单元格跳过（避免垃圾记录；如需保留空单元格可去掉该判断）。纯文本（不含 <code>\t</code>）作为单条 <code>Type=Text</code> 记录，不做拆分。</div>
+
+<h3>4.3 排序与置顶（FR-03/FR-08/FR-10）</h3>
+<ul>
+<li>显示顺序由单一有序集合（如 <code>ObservableCollection&lt;ClipItem&gt;</code>）维护。</li>
+<li><strong>收藏置顶：</strong>排序时所有 <code>IsFavorite==true</code> 的项排在前，普通项排在后；各自<strong>保持相对顺序</strong>。此处的「置顶」指<strong>集合存储顺序</strong>（末位淘汰、沉底、插入位都以此为依据），<strong>不等于上屏可见</strong>——可见性见本节末勘误（v1.2，C10）。</li>
+<li><strong>顺序不变式：</strong>集合结构为 <code>[收藏区 | 非收藏区]</code>；<strong>两个区内部均「最新在前」</strong>——即非收藏区<strong>最前 = 最新</strong>，非收藏区<strong>末尾 = 最旧</strong>。</li>
+<li><strong>新复制项</strong>插入到「第一个非收藏项之前」（即非收藏区最前 = 最新位置）。</li>
+<li><strong>快速粘贴沉底：</strong>粘贴后将该项从集合移除并 <code>Add</code> 到末尾（非收藏区末尾 = 最旧位置），其相对顺序被持久化保留。</li>
+<li><strong>切换收藏</strong>时重排一次（收藏前 / 普通后）；各区相对顺序不变（稳定重排，如 <code>stable_partition</code>）。</li>
+</ul>
+<div class="note warn"><b>勘误（v1.2，C10）：</b>FR-08 原文写作「收藏项<strong>置顶分组</strong>显示」，与本节「集合结构为 <code>[收藏区 | 非收藏区]</code>」相互牵连：若收藏项真的显示在列表前部，则任何普通视图都会以收藏区开头，序号、分组分隔线与「最新在前」的阅读预期都要为此成立；而 FR-07 又单独提供了「收藏」这一过滤视图。二者按字面无法同时满足。经用户决议（2026-10-04）统一为：<strong>收藏项只在【收藏】过滤视图显示</strong>，「全部 / 文本 / 表格单元格」一律剔除收藏项，分组分隔线随之取消。<strong>本节定义的存储顺序不变式、插入位、末位淘汰、快速粘贴沉底全部不变</strong>，改动只落在「显示过滤」这一层。代价（已确认接受）：点星后条目立刻离开当前视图，故状态栏需给出 3 秒去向提示。</div>
+
+<h3>4.4 自动清理（FR-04）</h3>
+<pre><code>while (nonFavoriteCount > 500):
+    oldest = Items.Last(i => !i.IsFavorite)    // 非收藏区末尾 = 最旧（见 §4.3 顺序不变式）
+    Items.Remove(oldest)</code></pre>
+<p>收藏项永不参与清理。</p>
+<div class="note warn"><b>勘误（v1.1，C7）：</b>本节原伪码写作 <code>Items.First(i =&gt; !i.IsFavorite)</code> 并注释「非收藏区最前 = 最旧」，与 §4.3「新复制项插入非收藏区最前、最新在上」及 FR-04「自动删除<strong>最旧</strong>的」相互矛盾——按原字面实现会淘汰<strong>最新</strong>条目。现统一为：<strong>末位淘汰</strong>（<code>Last(!IsFavorite)</code>）。三处佐证：FR-04 需求原文（删最旧）、§4.3 插入位（最新在前）、FR-10 快速粘贴「沉底」（用过的排到末尾并最先被清理）。同理，<code>while</code> 循环每轮只可能移除末尾项，可优化为一次批量删除超额尾部区间。</div>
+<div class="note warn"><b>勘误（v1.2，C12）：</b>本节的「清理」专指 FR-04 的<strong>自动</strong>上限淘汰，而原规范对<strong>手动</strong>「清除」（FR-13）却写作「清空所有记录（<strong>含收藏</strong>）」——同一份文档里，收藏在自动路径上「永不参与清理」，在手动路径上却被一键抹掉，语义相反。经用户决议（2026-10-04）统一为：<strong>收藏永久保存，「清除」只清非收藏区</strong>；删除某条收藏的唯一路径是先取消收藏使其回到非收藏区。原 FR-13 的「清空所有记录（含收藏）」与 §12 ADR 中「用户确认选项 B」一并作废，替换见 §12。</div>
+
+<h3>4.5 搜索防抖（FR-06）</h3>
+<pre><code>OnSearchTextChanged(value):
+    searchTimer.Stop(); searchTimer.Start()   // 300ms 定时器，到期才 RefreshDisplay()
+
+RefreshDisplay():
+    q = Items
+    q = apply FilterType (All/Text/TableCell/Favorite)
+    if kw != "": q = q.Where(i => i.Content.Contains(kw, IGNORE_CASE)
+                               || i.SourceLabel.Contains(kw, IGNORE_CASE))
+    DisplayItems = new ObservableCollection(q)   // 列表绑定 DisplayItems</code></pre>
+
+<!-- ============ 5. 交互状态机 ============ -->
+<h2>5. 交互与状态机</h2>
+<h3>5.1 两种粘贴模式</h3>
+<table>
+<tr><th>模式</th><th>进入</th><th>选中</th><th>粘贴触发</th><th>粘贴后效果</th></tr>
+<tr><td><b>普通模式</b><br><span class="pill">默认</span></td><td>标题栏模式文字点击切换</td><td>无强制选中</td><td><b>双击</b>记录</td><td>变灰，<strong>位置不变</strong></td></tr>
+<tr><td><b>快速模式</b></td><td>同上切换</td><td>进入时<strong>默认第一条</strong>；单击切换选中（高亮）</td><td><strong>空格键</strong>（焦点不在搜索框时）</td><td>变灰，<strong>移到列表最末</strong>；选中自动跳到下一条未粘贴项</td></tr>
+</table>
+<div class="note">验收标准 6 明确：普通模式双击粘贴到光标/鼠标所在处；快速模式<strong>空格键</strong>粘贴到光标处。单击在快速模式下<strong>仅选中</strong>，不粘贴（避免误触）。</div>
+
+<h3>5.2 标题栏三图标（FR-15/FR-12）</h3>
+<table>
+<tr><th>图标位置</th><th>功能</th></tr>
+<tr><td>① 最左</td><td><b>收起窗口</b>：<code>Window.Hide()</code>，最小化到托盘，<strong>继续后台监听</strong></td></tr>
+<tr><td>② 中间</td><td><b>悬浮开关</b>：切换 <code>TopMost</code>，高亮表示该状态开启</td></tr>
+<tr><td>③ 最右</td><td><b>关闭软件</b>：彻底退出（注销热键/监听、销毁托盘、<code>Shutdown</code>）</td></tr>
+</table>
+
+<h3>5.3 模式切换入口</h3>
+<p>标题栏显示「剪贴板 - 普通模式」/「剪贴板 - 快速模式」，<strong>点击该文字</strong>在两种模式间切换（非两个独立按钮）。</p>
+
+<!-- ============ 6. 系统集成 ============ -->
+<h2>6. 系统集成（Win32）</h2>
+<h3>6.1 剪贴板监听</h3>
+<ul>
+<li>使用 <code>AddClipboardFormatListener(hwnd)</code> + 处理窗口消息 <code>WM_CLIPBOARDUPDATE = 0x031D</code>。</li>
+<li>监听挂在<strong>主窗口的 HwndSource</strong> 上；窗口 <code>Hide()</code>（非关闭）时句柄仍存在、消息循环继续，故收起后仍持续监听。</li>
+<li>读取用 <code>Clipboard.GetText()</code>，需 <code>try/catch</code>（剪贴板可能被其他进程锁定）。</li>
+</ul>
+
+<h3>6.2 全局热键</h3>
+<pre><code>RegisterHotKey(hwnd, id=1, MOD_CONTROL, VK_OEM_3)   // VK_OEM_3 = 0xC0 即 ` ~ 键
+// 收到 WM_HOTKEY = 0x0312 → ToggleVisibility()：Visible 则 Hide，否则 Show+Activate</code></pre>
+
+<h3>6.3 模拟键入（FR-11）</h3>
+<pre><code>PasteText(text, targetHwnd):
+  Clipboard.SetText(text)                       // 会触发 WM_CLIPBOARDUPDATE（由调用方屏蔽）
+  if targetHwnd != Zero:
+     selfHwnd = Process.MainWindowHandle
+     AttachThreadInput(targetThread, selfThread, true)   // 提升 SetForegroundWindow 成功率
+     SetForegroundWindow(targetHwnd)
+     AttachThreadInput(targetThread, selfThread, false)
+  keybd_event(CTRL,0,0); keybd_event(V,0,0);
+  keybd_event(V,0,KEYUP); keybd_event(CTRL,0,KEYUP)      // 发送 Ctrl+V 到目标光标处</code></pre>
+
+<h4>屏蔽自监听（关键）</h4>
+<p>写入剪贴板会再次触发 <code>WM_CLIPBOARDUPDATE</code>，必须忽略，否则会把"刚粘贴的内容"又记成新历史：</p>
+<pre><code>bool _internalPaste = false;
+Timer _guard(400ms) → on tick: _internalPaste = false;   // 兜底
+
+DoPaste(item, moveToEnd):
+  _internalPaste = true
+  PasteService.PasteText(item.Content, lastExternalWindow)
+  ViewModel.PasteDone(item, moveToEnd)
+  _guard.Restart()
+
+WndProc(WM_CLIPBOARDUPDATE):
+  if _internalPaste: _internalPaste = false; return;     // 忽略自身写入
+  text = ReadClipboardText(); if text: AddFromClipboard(text)</code></pre>
+
+<h4>捕获目标窗口</h4>
+<p>「目标窗口」= 用户粘贴前最后活跃的外部窗口。在主窗口 <code>Deactivated</code> 事件中记录 <code>lastExternalWindow = GetForegroundWindow()</code>。用户按 <code>Ctrl+`</code> 呼出主窗口时，主窗口获得焦点、外部窗口 Deactivated → 正好记下了目标窗口句柄。</p>
+
+<h3>6.4 系统托盘</h3>
+<ul>
+<li><code>NotifyIcon</code>（WinForms），双击图标 = 打开窗口；右键菜单 = 「打开 / 退出」。</li>
+<li>退出时 <code>notifyIcon.Dispose()</code> 并注销监听/热键，再 <code>Application.Shutdown()</code>。</li>
+</ul>
+
+<!-- ============ 7. UI 规范 ============ -->
+<h2>7. 界面规范（UI/UX）</h2>
+<div class="ascii">┌──────────────────────────────────────────────────┐
+│  剪贴板 - 普通模式            [收起] [悬浮] [关闭]   │  ← 标题栏：模式文字可点击切换
+├──────────────────────────────────────────────────┤
+│  [ 🔍 搜索框................ ]                       │
+│  [ 全部▾ ]  [ 清除 ]  [ 复位 ]                      │  ← 工具栏
+├──────────────────────────────────────────────────┤
+│  1  文本内容预览…                  12:30:00        │  ← 最新在前；本视图不含收藏项（C10）
+│  2  来自表格：第 1 行 第 2 列 → 400.00   12:29     │  ← 表格单元格（蓝色来源标注）
+│  3  普通文本…                           12:28      │
+│  …（已粘贴项灰显 + 半透明）                          │
+└──────────────────────────────────────────────────┘</div>
+
+<table>
+<tr><th>区域</th><th>规范</th></tr>
+<tr><td>列表项</td><td>左侧<strong>序号</strong>（当前顺序，1 起）；内容预览（最多约 3 行，超出省略）；表格项显示蓝色「来自表格：第 X 行 第 Y 列」；右侧时间戳（HH:mm:ss）；右侧 ★/☆ 收藏按钮</td></tr>
+<tr><td>已粘贴（灰显）</td><td><code>IsPasted==true</code> → 前景灰 + 半透明（如 Opacity 0.55）</td></tr>
+<tr><td>收藏项</td><td>浅黄背景高亮。<strong>只在【收藏】过滤视图显示</strong>，「全部 / 文本 / 表格单元格」一律剔除（v1.2 勘误 C10；原写作「始终位于列表前部（置顶分组）」）</td></tr>
+<tr><td>快速模式选中</td><td>当前选中项高亮（ListBox 选中样式即可）</td></tr>
+</table>
+
+<!-- ============ 8. 持久化 ============ -->
+<h2>8. 持久化规范</h2>
+<table>
+<tr><th>项</th><th>说明</th></tr>
+<tr><td>路径</td><td><code>%AppData%/SuperClip/history.json</code></td></tr>
+<tr><td>格式</td><td>JSON 数组，按<strong>当前显示顺序</strong>序列化（含快速粘贴造成的沉底顺序）</td></tr>
+<tr><td>保留字段</td><td>Id, Content, Type, SourceRow, SourceCol, Timestamp, Hash, IsFavorite, IsPasted</td></tr>
+<tr><td>启动时</td><td>加载 → 执行一次置顶重排 → 规范化保存 → 刷新显示</td></tr>
+<tr><td>容错</td><td>读写异常不得中断主流程（catch 后忽略）</td></tr>
+</table>
+
+<!-- ============ 9. 验收标准 ============ -->
+<h2>9. 验收标准（Acceptance Criteria）</h2>
+<table>
+<tr><th>#</th><th>标准</th><th>对应 FR</th></tr>
+<tr><td>AC-1</td><td>复制 Excel 表格后，自动拆分为单元格级历史记录，并标注行列位置「来自表格：第 X 行 第 Y 列」</td><td>FR-05</td></tr>
+<tr><td>AC-2</td><td>普通模式双击记录、快速模式空格键记录，均能成功粘贴到目标应用光标处；快速粘贴后该项沉底并变灰</td><td>FR-09/10/11</td></tr>
+<tr><td>AC-3</td><td>重启程序后，历史记录、收藏、已粘贴（灰色）状态、<strong>排序</strong>全部保留</td><td>FR-03</td></tr>
+<tr><td>AC-4</td><td>点击「悬浮」后主窗口浮于所有窗口最上层；再点一次恢复</td><td>FR-12</td></tr>
+<tr><td>AC-5</td><td>列表每条记录左侧显示当前顺序的序号</td><td>FR-17</td></tr>
+<tr><td>AC-6</td><td>普通模式双击数据粘贴到光标/鼠标所在处；快速模式空格键粘贴到光标处</td><td>FR-09/10</td></tr>
+<tr><td>AC-7</td><td>生成的 exe 在任意 Windows x64 机器上可独立运行（不依赖安装 .NET 运行时），启动后常驻托盘</td><td>FR-15/16</td></tr>
+<tr><td>AC-8</td><td>全程无网络访问（可用防火墙验证无出站连接）</td><td>FR-00</td></tr>
+</table>
+
+<!-- ============ 10. 项目结构 ============ -->
+<h2>10. 建议项目结构</h2>
+<pre><code>SuperClip/
+├── SuperClip.csproj
+├── App.xaml / App.xaml.cs
+├── Models/
+│   └── ClipItem.cs              # 数据模型 + ClipType 枚举
+├── Native/
+│   └── WinApi.cs                # P/Invoke：剪贴板/前台窗口/热键/键盘
+├── Services/
+│   ├── StorageService.cs        # JSON 持久化 + SHA-256 去重
+│   ├── TableParser.cs           # TSV 识别与单元格拆分
+│   ├── PasteService.cs          # 模拟键入（写剪贴板+激活+Ctrl+V）
+│   └── TrayService.cs           # 托盘图标 + 右键菜单
+├── ViewModels/
+│   └── MainViewModel.cs         # 列表/搜索/过滤/收藏/模式/清除/复位/粘贴状态
+└── Views/
+    ├── MainWindow.xaml / .cs    # UI + 标题栏图标 + 列表 + 粘贴交互 + 热键/监听
+    └── Converters.cs            # 序号+1、模式→标题、类型→中文、★/☆、空折叠</code></pre>
+
+<!-- ============ 11. 构建发布 ============ -->
+<h2>11. 构建与发布</h2>
+<p><code>SuperClip.csproj</code> 关键配置：</p>
+<pre><code>&lt;OutputType&gt;WinExe&lt;/OutputType&gt;
+&lt;TargetFramework&gt;net8.0-windows&lt;/TargetFramework&gt;
+&lt;UseWPF&gt;true&lt;/UseWPF&gt;
+&lt;UseWindowsForms&gt;true&lt;/UseWindowsForms&gt;   &lt;!-- 用于 NotifyIcon --&gt;
+&lt;RuntimeIdentifier&gt;win-x64&lt;/RuntimeIdentifier&gt;
+&lt;PublishSingleFile&gt;true&lt;/PublishSingleFile&gt;
+&lt;SelfContained&gt;true&lt;/SelfContained&gt;
+&lt;PublishTrimmed&gt;true&lt;/PublishTrimmed&gt;
+&lt;PublishReadyToRun&gt;true&lt;/PublishReadyToRun&gt;</code></pre>
+<p>发布命令（在 Windows 上执行）：</p>
+<pre><code>dotnet publish -c Release -r win-x64 --self-contained ^
+  -p:PublishSingleFile=true -p:PublishTrimmed=true</code></pre>
+<p>产物为单个 <code>SuperClip.exe</code>，拷贝到任意 Windows 10/11 x64 机器双击即用，<strong>无需安装 .NET Runtime</strong>。</p>
+
+<!-- ============ 12. 决策记录 ============ -->
+<h2>12. 关键决策记录（ADR）</h2>
+<table>
+<tr><th>决策</th><th>结论</th><th>理由</th></tr>
+<tr><td>技术栈</td><td>WPF / .NET 8</td><td>用户选择；原生 Windows、可自包含</td></tr>
+<tr><td>粘贴机制</td><td>模拟键入（写剪贴板 + 激活目标 + Ctrl+V）</td><td>用户明确"直接模拟键入"；兼容性最好</td></tr>
+<tr><td>快速模式触发</td><td><b>单击选中 + 空格键粘贴</b>（非单击即粘贴），默认选中第一条</td><td>避免误触；验收标准 6 明确空格键</td></tr>
+<tr><td>清除语义</td><td><strong>只清非收藏区，收藏条目永久保留</strong>；删除收藏须先取消收藏</td><td>v1.2 勘误（C12）取代原「清空所有记录（含收藏）／用户确认选项 B」。用户决议 2026-10-04：收藏＝永久保存，与 §4.4「收藏项永不参与清理」对齐</td></tr>
+<tr><td>复位语义</td><td>仅快速模式：恢复最初（按时间）顺序 + 清除所有灰显</td><td>用户定义：回到最初复制的数据模式</td></tr>
+<tr><td>排序持久化</td><td>按当前显示顺序序列化，重启保留（含沉底）</td><td>验收标准 3</td></tr>
+<tr><td>开机自启</td><td>不做</td><td>用户明确不要</td></tr>
+<tr><td>分发形态</td><td>自包含单文件 win-x64</td><td>分发给他人各 Windows 环境，免装 Runtime</td></tr>
+<tr><td>空单元格</td><td>拆分时跳过完全为空的单元格</td><td>避免无意义垃圾记录</td></tr>
+<tr><td>自动清理方向（C7）</td><td>末位淘汰：删除非收藏区<strong>末尾</strong>项</td><td>v1.1 勘误。原 §4.4 伪码取 <code>First(!IsFavorite)</code> 与 FR-04「删最旧」及 §4.3「最新在前」冲突，按字面会误删最新条目；以需求原文与沉底语义为准</td></tr>
+<tr><td>收藏可见性（C10）</td><td>收藏项<strong>只在【收藏】过滤视图显示</strong>，「全部 / 文本 / 表格单元格」剔除收藏</td><td>v1.2 勘误。原 FR-08「置顶分组显示」与 §4.3「集合结构 <code>[收藏区 | 非收藏区]</code>」、FR-07 另设「收藏」视图相互冲突（普通视图无法既按最新在前又不被收藏区打头）。存储顺序不变式、插入位、末位淘汰、沉底全部保留，改动只落在显示过滤层；分组分隔线取消，点星后条目立刻离开当前视图 → 状态栏给 3 秒去向提示</td></tr>
+</table>
+
+<!-- ============ 13. 边界与风险 ============ -->
+<h2>13. 边界条件与风险</h2>
+<ul>
+<li><span class="tag t-warn">风险</span> <b>SetForegroundWindow 被拒</b>：目标窗口为管理员权限或全屏时可能失败 → 已用 <code>AttachThreadInput</code> 缓解，失败则静默（粘贴可能落到错误窗口）。</li>
+<li><span class="tag t-warn">风险</span> <b>剪贴板被锁</b>：读取/写入时其他进程占用 → 全程 <code>try/catch</code> 兜底。</li>
+<li><span class="tag t-info">边界</span> 复制图片/文件：仅记录纯文本，非文本内容忽略。</li>
+<li><span class="tag t-info">边界</span> 完全相同的连续复制：去重只保留一条（更新时间戳）。</li>
+<li><span class="tag t-info">边界</span> 搜索时焦点在搜索框按空格：输入空格而非触发粘贴。</li>
+<li><span class="tag t-bad">禁区</span> 严禁引入任何 HTTP/网络库或远程调用（AC-8）。</li>
+</ul>
+
+<div class="card" style="margin-top:36px">
+<strong>交付声明：</strong> 本规范为功能与实现的完整契约。任何开发者或 AI 依据本文的 FR / 算法 / 集成 / 验收条款，即可在 Windows + .NET 8 环境从零重建可运行的 SuperClip 应用，无需参考既有源码。
+</div>
+
+</div>
+</body>
+</html>

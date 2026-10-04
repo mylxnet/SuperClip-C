@@ -1,0 +1,22 @@
+# 这份 Git 的 core.autocrlf 在本机是开着的：不加约束，Windows 上 checkout 会把 LF 换成 CRLF，
+# 于是每次 diff 都能看到"整文件改动"的假变更。构建脚本与源码一律钉 LF。
+* text=auto
+
+*.sh    text eol=lf
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.hpp   text eol=lf
+*.ps1   text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.json  text eol=lf
+*.txt   text eol=lf
+
+# Windows 专属：资源脚本与批处理按 CRLF 更贴合本地 RC.exe/cmd 习惯
+*.rc    text eol=crlf
+*.bat   text eol=crlf
+*.manifest text eol=crlf
+
+*.png   binary
+*.exe   binary
+*.ico   binary

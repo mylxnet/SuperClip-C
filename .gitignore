@@ -1,0 +1,22 @@
+# 构建产物与交叉编译输出：整目录不入库
+# 里面除了 .exe/.o，还有历次 UI 走查留下的 43 张截图，截图上是**真实剪贴板内容**，绝不能进版本库。
+cpp/build-mingw/*
+# 例外：走查驱动脚本是纯 ASCII 的测试工装，跟着仓库走才有复现价值
+!cpp/build-mingw/*.ps1
+
+# MSVC / CMake 本地产物
+build/
+cpp/build/
+*.obj
+*.exe
+*.ilk
+*.pdb
+*.exp
+*.lib
+
+# 编辑器与系统杂物
+.vs/
+.vscode/
+Thumbs.db
+Desktop.ini
+*.user
