@@ -8,6 +8,9 @@ cpp/qa/*.png
 # MSVC / CMake 本地产物
 build/
 cpp/build/
+# PackageRelease.bat 的发布产物（exe 副本与 portable zip）：只作 GitHub Release 附件分发，绝不入库
+release/
+cpp/release/
 *.obj
 *.exe
 *.ilk
