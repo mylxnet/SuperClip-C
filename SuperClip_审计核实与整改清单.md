@@ -3,7 +3,7 @@
 > 核实对象：`SuperClip_审计报告.md`（2026-10-05，第三方只读审计，非本人撰写）
 > 本文作者：本仓实施方（被审计方）
 > 用途：把外部审计逐条对码核实后的**事实基线 + 整改清单**固化，供 §11 步骤 12 B 段一并执行
-> 状态：**第 1、2 档（部分）与 `Sha256` 注释对齐已于 2026-10-05 落地并实机走查；第 3 档 #6（交叉构建走 CMake）同日落地**。其余档位待授权/待环境。执行记录见 §6，走查记录见 §6.1，CMake 单一清单见 §6.2。
+> 状态：**第 1、2、3 档已全部落地（2026-10-05）；WSL 按项目隔离同日完成**。第 2 档 #4（`CHANGELOG.md`）与第 4 档（版本号/署名/图标/`doc/`/README）在执行「完成所有后续工作」那一轮继续。执行记录见 §6，走查记录见 §6.1，CMake 单一清单见 §6.2，契约原文一致性 + WSL 隔离见 §6.3。
 
 ---
 
@@ -115,13 +115,14 @@
 
 | # | 动作 | 文件 | 备注 |
 |---|---|---|---|
-| 5 | 附录 A.4"链接库固定"改为与实际一致：删 `dwmapi`（动态加载不入链），补 `advapi32`、`uuid`、`wtsapi32` | `C++_技术方案.md:761` | **改契约原文需单独授权** |
+| 5 | 附录 A.4"链接库固定"改为与实际一致：删 `dwmapi`（动态加载不入链），补 `advapi32`、`uuid`、`wtsapi32` | `C++_技术方案.md:761` | **已落地（2026-10-05，授权见 §6.3）**：A.4 清单改为与 `CMakeLists.txt` 逐字一致，并附交叉构建实测导入表 + "只能当旁证，结案仍以 MSVC `dumpbin /dependents` 为准"的边界 |
 | 6 | 交叉构建改走 CMake（`-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++`），消灭手抄清单；`app.rc` 的 windres 差异用 `if(MSVC)` 隔离 | `cpp/build-tests.sh`、`CMakeLists.txt:66-67` | **已落地（2026-10-05）**：WSL 装 `cmake` 3.22.1，`build-tests.sh` 改为驱动 `cmake --build`，脚本内源/库清单全删；windres 实测能编 `app.rc`，无需 `if(MSVC)` 隔离。见 §6.2 |
-| 7 | JSON 选型 ADR 由 RapidJSON 改写为"自研极简 JSON"，删 §10.1 `:661` 的 RapidJSON/Catch2 表述 | 设计方案 `:46,54,394,452,545`、技术方案 `:661` | **改契约原文需单独授权** |
+| 7 | JSON 选型 ADR 由 RapidJSON 改写为"自研极简 JSON"，删 §10.1 `:661` 的 RapidJSON/Catch2 表述 | 设计方案 `:46,54,394,452,545`、技术方案 `:661` | **已落地（2026-10-05，授权见 §6.3）**：§1 选型表、§1.1 不引入清单、§1.2 依赖面清单、§10 结构树、§11.1 编译配置、§12.1 测试表、§394 `\u` 条款、§557 ADR 行、技术方案 §9.1/§10.1/A.4 全部改为实测口径。见 §6.3 |
 
 ### 第 4 档 · 已推后的 agent.md 整改（用户明示"文档的事往后推"，此处仅登记不启动）
 
-图标 `SuperClip.ico`（16/24/32/48/256）+ 解开 `app.rc:6`；状态栏「by Mr lin」署名（版本号在前）与 `app.rc:29` 版权同步；`doc/` 四件套；README 按 11 段模板重写（现为开发者向）；升版本号三处一致；WSL 按项目隔离到 `E:\public`；一次性 QA 脚本去留。
+图标 `SuperClip.ico`（16/24/32/48/256）+ 解开 `app.rc:6`；状态栏「by Mr lin」署名（版本号在前）与 `app.rc:29` 版权同步；`doc/` 四件套；README 按 11 段模板重写（现为开发者向）；升版本号三处一致；一次性 QA 脚本去留。
+其中**「WSL 按项目隔离到 `E:\public`」已于 2026-10-05 提前落地**（本项属环境而非文档，不需授权），见 §6.3 末段。
 
 ### 第 5 档 · 明确不做（附理由）
 
@@ -201,6 +202,10 @@ LINK_EXIT=0  UNDEFINED=0
 | 第 5 档 · `Sha256` 注释 | **已完成** | `Sha256.cpp:38` 改为如实描述："失败返回空串：调用方不额外拒绝，条目照常入列（去重此时按空串比对）" | 仅注释；`build-tests.sh --app` 通过 |
 | 第 3 档 #6 交叉构建走 CMake | **已完成**（详见 §6.2） | WSL 装 `cmake` 3.22.1；`build-tests.sh` 改为驱动 `cmake --build`，删除脚本内手抄的源/库清单与 `--app` 手工链接行；`CMakeLists.txt` 两处过时注释同步 | `CONFIGURE_RC=0`、`BUILD_RC=0`、error/undefined **0**、自有源 warning **0**；`sc_tests.exe` Windows 实跑 40/214/0；`objdump -p` 见 `WTSAPI32.dll` 入导入表；windres 编 `app.rc` 成功且 Windows 读到 `FileVersion 2.0.2.0` |
 | 回归 | **无回归** | —— | `build-tests.sh` → `sc_tests.exe` 在 Windows 实跑：**用例 40、断言 214、失败 0**；`build-tests.sh --app` → `SuperClip.exe` 编译通过（3,507,020 B）。〔该 `--app` 参数随后被 §6.2 的 CMake 单一清单构建取代〕 |
+| 第 3 档 #5 #7 契约原文一致性 | **已完成**（详见 §6.3） | 技术方案 §9.1/§10.1/A.4、设计方案 §1/§1.1/§1.2/§10/§11.1/§12.1/§394/§557 全部改为实测口径；RapidJSON/Catch2/`VS_DPI_AWARE`/`comdlg32`/旧例数等过期表述清零 | 交叉引用逐条与 `ls`、`CMakeLists.txt`、`objdump`、`sc_tests` 实跑输出核对；发现并修回两处编辑事故（`Qt` 被误删出禁止清单、结构树里写了尚不存在的 `SuperClip.ico`） |
+| agent.md 二.2 · WSL 按项目隔离 | **已完成**（详见 §6.3） | 新建专属发行版 `superclip`（数据 `E:\public\superclip\wsl`，初始化 `E:\public\superclip\provision.sh`，aliyun 源）；`build-tests.sh` 中间产物改落 `$HOME/superclip-build`，本地只收两个 exe；共用发行版 `lxsyzd` 未动 | 冷构建 `RC=0/ERR=0/CW=0/WARN=0`；`sc_tests.exe` 40/214/0；`SuperClip.exe` 3,556,680 B、`FileVersion 2.0.2.0`；`Clock skew` 告警归零 |
+
+> 表内出现的 `build-tests.sh --app` 是当时命令的原样记录，该参数已随 §6.2 删除；现在一条 `bash build-tests.sh` 同时产出 `sc_tests.exe` 与 `SuperClip.exe`。
 
 ### 6.1 实机走查记录（2026-10-05，用户让出桌面约 60 秒）
 
@@ -268,7 +273,7 @@ superclip_still_running=0 pastetarget_still_running=0
 两条已写入项目记忆，后续走查的固定动作改为：还原前打印"live 与备份各自条目数 + 各自是否含本轮 token"，数不对就停下来问；
 清理时只删本轮自己新建的那个目录。
 
-**本轮未做（有意）**：第 2 档 #4 `CHANGELOG.md` 与第 4 档绑定（版本号/署名/图标同批）；第 3 档 #5 #7 需授权改两份契约原文。
+**本轮未做（有意）**：第 2 档 #4 `CHANGELOG.md` 与第 4 档绑定（版本号/署名/图标同批）；第 3 档 #5 #7 当时仍待授权（**同日已授权并落地，见 §6.3**）。
 **MSVC 侧仍属未验证**：§1.2 的旁证与 §6.2 的真实 `cmake --build` 都是 mingw 工具链，只证明"清单已补齐、CMake 路径本身能配置能构建"；`build.bat`（MSVC）真实出包与 `dumpbin` 结案仍待步骤 12 B。
 
 ### 6.2 第 3 档 #6 落地：交叉构建改走 CMake 单一清单（2026-10-05，同日追加）
@@ -306,4 +311,26 @@ DWrite.dll  GDI32.dll  KERNEL32.dll  SHELL32.dll  USER32.dll  WTSAPI32.dll  bcry
 **一处环境噪声**：冷构建日志有 6 行 `gmake: warning: Clock skew detected`（源文件在 `/mnt/e`，其 Windows mtime 比 WSL 时钟超前约 2 s，刚写出的 `.o` 反而"更旧"）。
 实测 `date` 与 `Get-Date` 差 2 s；冷构建没有"跳过重编"的可能，增量构建那一轮则无此告警，判定为无害。
 若日后出现"改了码没重编"的怪象，先校时（`wsl --shutdown` 会同步一次），别怀疑构建系统。
+**该告警现已随 §6.3 的项目隔离消失**：中间产物改落 `/root/superclip-build`（ext4 原生路径，不在 `/mnt/e`），当轮冷构建日志 0 条 clock skew。
+
+### 6.3 第 3 档 #5 + #7 落地 + WSL 按项目隔离（2026-10-05，同日追加）
+
+授权口径：#5/#7 要改的是两份契约原文（`C++_技术方案.md`、`C++_设计方案.md`），我在提案里列明后由我以「完成所有后续工作」授权执行；**设计规范 HTML 与原始 .NET 侧文档未动**。
+
+| 动作 | 结果 |
+|---|---|
+| 技术方案 A.4「链接库固定」 | 改为 `user32 kernel32 shell32 gdi32 advapi32 ole32 oleaut32 uuid bcrypt d2d1 dwrite wtsapi32`（与 `CMakeLists.txt` 逐字一致）；写明 `dwmapi` 由 `SystemInfo.cpp` 走 `LoadLibraryW` 不入链、`uuid` 只提供 `FOLDERID_*` 数据；附交叉构建实测导入表，并标注**只能当旁证，A.4 结案仍以 MSVC `dumpbin /dependents` 为准（12 B）** |
+| 技术方案 §10.1 CMake 要点 | 不再逐行照抄清单（历史正是"文档一份、脚本一份、CMake 一份"三份漂移才让 P0 无人察觉），改为指向 `cpp/CMakeLists.txt` 为唯一权威 + 要点；`cmake_minimum_required` 由 3.24 修正为实际使用的 **3.20**；删掉 `VS_DPI_AWARE "PerMonitorV2"`（DPI 由 `app.manifest` 提供，二者并存冲突）；删掉 RapidJSON/Catch2 的 `FetchContent` 表述 |
+| 技术方案 §9.1 测试结构 | 由「Catch2」改为 `tests/test_main.cpp` 自带极简断言器（`CHECK/CHECK_EQ` + 计数汇总），构建路径改为 `bash build-tests.sh`（内部即 `cmake --build`），并写明当前规模 **40 例 / 214 断言 / 0 失败** |
+| 设计方案 §1 JSON 选型行 | RapidJSON → **自研极简 JSON**（`src/core/Json.h/.cpp` 约 180 行）；原因如实写为「落地时环境离线取不到包」，决策记录以 `Json.h:10` 头注释为准，不编造动机 |
+| 设计方案 §1.1 / §1.2 | `Qt` 恢复到"明确不引入"清单（先前一次批量编辑把它误删）；依赖面清单重构为**链接库 / 动态加载（dwmapi、shcore）/ 不链接也不调用（comdlg32、网络栈）**三类 + 实测导入表 |
+| 设计方案 §10 项目结构树 | 换成 2026-10-05 实际目录（`cpp/src/{app,core,services,native,ui,res,util}`、`tests/test_main.cpp`、`tools/PasteTarget.cpp`、`qa/*.ps1`、`scripts/`、`installer/`、`doc/`）。已按 `ls` 逐目录核对；**图标 `SuperClip.ico` 仍未落地**，树里不写它，`app.rc` 注明 `IDI_APP` 行仍注释 |
+| 设计方案 §11.1 编译配置 | `cl/link` 行补齐 `advapi32 uuid wtsapi32`、去掉 `comdlg32 dwmapi`；体积预期下新增旁证：mingw `-O1` 3.51 MB / `-O3` 3.56 MB，**§10.3 的 ≤3 MB 在交叉构建上任何一档都没接近过**，只能在 MSVC 上结 |
+| 设计方案 §12.1 测试表 | 原规划 33/21 例口径作废，改为实测分组 §9.2=13、§9.3=8、§9.4=15、§9.6=4 → **40 例 / 214 断言 / 0 失败**，用例名照 `test_main.cpp` 实际函数名写 |
+| 设计方案 §394 `\u` 条款 | 原写「RapidJSON 默认支持」→ 改为自研 reader 的 `\u` 分支（含代理对拼接）已实现，**但该分支无专门单测**，互通由实机读旧 `history.json` 验证。此前一次编辑把 §9.6-01 说成覆盖了 `\u`，属不实，已纠正 |
+| WSL 按项目隔离 | `wsl --import superclip E:\public\superclip\wsl E:\public\ubuntu-jammy-wsl-amd64-ubuntu22.04lts.rootfs.tar.gz`（`IMPORT_RC=0`）；初始化脚本 `E:\public\superclip\provision.sh` 走阿里云源（`aliyun_lines=21`）装 `cmake 3.22.1 / x86_64-w64-mingw32-g++ (GCC) 10-win32 20220113 / windres 2.38`。原有共用发行版 `lxsyzd` 未动 |
+| 中间产物迁出本地 | `build-tests.sh` 的构建目录改为 `BUILD=${SC_BUILD:-$HOME/superclip-build}`（WSL ext4 内），只把两个 exe 拷回 `cpp/build-mingw/`（agent.md 二.5）；本地 `build-mingw/cmake` 缓存目录已删 |
+| 迁移后回归 | 全新发行版冷构建 `RC=0 / ERR=0 / CW=0 / WARN=0`，中间产物 `/root/superclip-build`；Windows 侧 `sc_tests.exe` 实跑 **40/214/0**，`SuperClip.exe` **3,556,680 B**、`FileVersion 2.0.2.0`（与 §6.2 同值，说明换发行版未改变产物） |
+
+**残留（不在本档）**：`msvcrt.dll` 是否随 MSVC `/MT` 消失、RT_MANIFEST 是否被 OS 实际加载、`advapi32`/`oleaut32` 能否从清单删除 —— 全部归步骤 12 B。
 

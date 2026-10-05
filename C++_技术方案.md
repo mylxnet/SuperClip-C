@@ -570,9 +570,9 @@ ProcessPicker.Cancel()（卸钩子 + SPI_SETCURSORS）
 ## 9. 测试方案
 
 ### 9.1 结构与构建
-Catch2（`add_executable(sc_tests ...)`，不链 d2d/dwrite）。被测范围：`core/` 全部纯函数 + `Store`（`StorageService` 以临时目录注入）。`ui/` 不写单测（无头环境不可行）→ §9.5 手测脚本。
+`tests/test_main.cpp` 自带极简断言器（`CHECK/CHECK_EQ` + 计数汇总），**不引 Catch2 也不引任何第三方**（守住 §1.1 的零依赖红线）；目标 `sc_tests`（`add_executable(sc_tests ...)`，不链 d2d/dwrite）。被测范围：`core/` 全部纯函数 + `Store`（`StorageService` 以临时目录注入）。`ui/` 不写单测（无头环境不可行）→ §9.5 手测脚本。
 
-> 落地实况（2026-10-04）：为守住"不引第三方依赖"的红线，实际用的是 `tests/test_main.cpp` 自带的极简断言器（`CHECK/CHECK_EQ` + 计数汇总），**没有 Catch2**；构建走 `build-tests.sh`（WSL mingw 交叉编译后在 Windows 本机跑产物，无 wine）。CMake 侧引入 Catch2 属 §10 发布构建的待办，不影响用例本身。
+> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **40 例 / 214 断言 / 0 失败**。
 
 ### 9.2 TableParser（13 例，对齐原 §12）
 | # | 输入 | 断言 |
@@ -646,19 +646,27 @@ AC-8 防火墙出站规则拦截 SuperClip.exe（TCP/UDP 全禁）+ 运行 30 �
 ## 10. 构建与发布
 
 ### 10.1 CMake（要点）
+
+> **权威来源是 `cpp/CMakeLists.txt` 本身**，本节只是要点，不再逐行照抄（历史上正是"文档抄一份、脚本抄一份、CMake 一份"三份不一致，才让主构建断链无人察觉；见 `SuperClip_审计核实与整改清单.md` §1）。
+> 交叉构建与 MSVC 构建**共用同一份清单**：`bash build-tests.sh` 内部就是 `cmake --build`。
+
 ```cmake
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.20)
 project(SuperClip LANGUAGES CXX)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")   # /MT
-add_executable(SuperClip WIN32 src/main.cpp $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/src/res/app.rc>)
+add_executable(SuperClip WIN32 ${SC_APP_SOURCES})                          # 源清单单一来源
 target_compile_features(SuperClip PRIVATE cxx_std_20)
 target_compile_definitions(SuperClip PRIVATE UNICODE _UNICODE NOMINMAX WINVER=0x0601 _WIN32_WINNT=0x0601)
 target_compile_options(SuperClip PRIVATE /W4 /permissive- /utf-8 /EHsc /sdl /guard:cf $<$<CONFIG:Release>:/O2 /GL>)
 target_link_options(SuperClip PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup $<$<CONFIG:Release>:/LTCG>)
-target_link_libraries(SuperClip PRIVATE user32 kernel32 shell32 gdi32 ole32 oleaut32 uuid bcrypt dwmapi d2d1 dwrite)   # uuid：FOLDERID_* 定义
-set_target_properties(SuperClip PROPERTIES VS_DPI_AWARE "PerMonitorV2")
+target_link_libraries(SuperClip PRIVATE
+  user32 kernel32 shell32 gdi32 advapi32 ole32 oleaut32 uuid bcrypt d2d1 dwrite wtsapi32)
+#   uuid：FOLDERID_* 定义（不产生导入表项）  wtsapi32：WTSRegisterSessionNotification（锁屏取消点选）
+#   dwmapi 不在此列：由 src/native/SystemInfo.cpp 走 LoadLibraryW 动态加载
 ```
-第三方仅 RapidJSON（`FetchContent` 固定 tag，离线可用预下载）与 Catch2（仅测试目标）。
+
+DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（二者同时存在会冲突）。
+**零第三方依赖**：JSON 为自研极简实现（`src/core/Json.h/.cpp`），单测用 `tests/test_main.cpp` 自带的极简断言器（`CHECK/CHECK_EQ` + 计数汇总），不引 RapidJSON 也不引 Catch2。
 
 ### 10.2 资源（`res/app.rc` + manifest）
 - `IDI_APP ICON "SuperClip.ico"`（多尺寸 16/24/32/48/256；托盘取 `SM_CXSMICON`）。
@@ -758,7 +766,11 @@ set_target_properties(SuperClip PROPERTIES VS_DPI_AWARE "PerMonitorV2")
 
 ### A.4 链接库、版本红线与审计
 
-- 链接库固定：`user32 kernel32 shell32 gdi32 ole32 oleaut32 bcrypt dwmapi d2d1 dwrite`
+- 链接库固定：`user32 kernel32 shell32 gdi32 advapi32 ole32 oleaut32 uuid bcrypt d2d1 dwrite wtsapi32`（与 `cpp/CMakeLists.txt` 逐字一致，交叉构建与 MSVC 同一份清单）。
+  `dwmapi` **不入链**：由 `src/native/SystemInfo.cpp` 走 `LoadLibraryW`+`GetProcAddress` 动态加载；`uuid` 只提供 `FOLDERID_*` 的 GUID 数据，不产生导入表项。
+- 交叉构建（mingw，非发布产物）实测导入表：`DWrite.dll GDI32.dll KERNEL32.dll SHELL32.dll USER32.dll WTSAPI32.dll bcrypt.dll d2d1.dll msvcrt.dll ole32.dll`。
+  其中 `msvcrt.dll` 是 mingw 静态 CRT 的残留导入，MSVC `/MT` 版是否出现同名导入**未验证**；`oleaut32`/`advapi32` 在链接清单里但当前无被调符号故不入导入表。
+  → 这张表**只能当旁证**，A.4 的结案仍以 MSVC 产物的 `dumpbin /dependents` 为准（步骤 12 B）。
 - D2D/DWrite 版本红线：不得调用 `IDWriteTextFormat::SetLineSpacing`（Win7 `E_NOTIMPL`）；`DWRITE_TRIMMING_GRANULARITY_LINE_BY_LINE` 在 Win11 实测即被拒绝（`E_INVALIDARG`），单行上限一律走 §6.4 的手工前缀裁剪，不使用 `SetTrimming`/`GetLineMetrics`
 - **审计动作**：发布前 `dumpbin /dependents SuperClip.exe` 与 `dumpbin /imports` 各跑一次，输出与 A.1/A.2/A.3 逐项核对，结果贴在发布记录里（AC-8 结案证据）
 

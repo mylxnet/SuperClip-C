@@ -43,7 +43,7 @@
 | 运行库 | **`/MT` 静态 CRT** | 目标机免装 VC++ Redistributable（等价原"免装 .NET"诉求） |
 | UI | **Win32 窗口 + Direct2D 1.0 / DirectWrite 全自绘** | 还原原 UI 规范（灰显半透明、收藏浅黄底、圆角卡片、选中描边）；exe 个位 MB |
 | 文本输入 | **真 `EDIT` 子控件**（仅搜索框） | 输入法合成不可自绘兜底；文档明确禁止 `InvariantGlobalization` 的同一动机——IME 必须完好 |
-| JSON | **RapidJSON**（header-only，MIT） | 本地文件读写，不含任何网络栈 |
+| JSON | **自研极简 JSON**（`src/core/Json.h/.cpp`，约 180 行，零依赖） | 落地实况与原 ADR 不同：原选 RapidJSON，但**当前环境离线取不到包**，改为内置极简实现（决策记录见 `Json.h` 头注释）。本项目只需「对象数组」一种形态，够用；副产品是 AC-8 的第三方审计面归零 |
 | SHA-256 | **BCrypt**（`bcrypt.lib`，系统自带） | 免第三方；FR-02 指定 SHA-256 |
 | GUID | `CoCreateGuid` + `StringFromCLSID` | 对应 C# `Guid.NewGuid()` |
 | 网络 | **零** | AC-8；依赖面清单见 §1.2 |
@@ -51,13 +51,20 @@
 
 ### 1.1 明确不引入
 
-WPF/WinForms/WinRT/Qt/Boost/HTTP 库/遥测。任何第三方仅限 RapidJSON 与 Catch2（测试专用，不进发布产物）。
+WPF/WinForms/WinRT/Qt/Boost/HTTP 库/遥测。**零第三方依赖**（原 ADR 允许的 RapidJSON 与 Catch2 均未引入：前者因离线取不到包改为自研极简 JSON，后者改为 `tests/test_main.cpp` 自带断言器）。
 
 ### 1.2 依赖面审计清单（AC-8 结案依据）
 
 ```
-user32  kernel32  shell32  gdi32  d2d1  dwrite  ole32  oleaut32  bcrypt  comdlg32  dwmapi
+链接库（与 cpp/CMakeLists.txt 逐字一致，交叉构建与 MSVC 同一份清单）：
+  user32  kernel32  shell32  gdi32  advapi32  ole32  oleaut32  uuid  bcrypt  d2d1  dwrite  wtsapi32
+动态加载（LoadLibraryW+GetProcAddress，不入链、是否出现取决于运行机）：
+  dwmapi（毛玻璃/窗口属性）  shcore（DPI，Win7 取不到则回落 GetDeviceCaps）
+不链接也不调用：comdlg32（无文件对话框）、任何网络栈
 ```
+实测导入表（mingw 交叉构建，`objdump -p SuperClip.exe`）：
+`DWrite.dll GDI32.dll KERNEL32.dll SHELL32.dll USER32.dll WTSAPI32.dll bcrypt.dll d2d1.dll msvcrt.dll ole32.dll`
+—— `uuid` 只是 GUID 数据不产生导入，`advapi32`/`oleaut32` 当前无被调符号故不在表内；`msvcrt.dll` 是 mingw 静态 CRT 残留，MSVC `/MT` 版待 `dumpbin /dependents` 结案。
 全部为系统本地 DLL 导出，无 socket/WinHTTP/WinINet/Curl 符号。验收方式：链接期不引用网络库 + Windows 防火墙出站规则拦截 `SuperClip.exe` 后功能无变化。
 
 ---
@@ -391,7 +398,7 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 ```
 - 字段名/大小写/顺序照抄；`Type` 按数值（0/1）；`Id` 小写带连字符 GUID。
 - `Timestamp` 写本地时间 `YYYY-MM-DDTHH:MM:SS.mmm`（无时区后缀）；**读时兼容带毫秒/带时区后缀/无后缀三种形态**。
-- 原 .NET 版由 `System.Text.Json` 默认将非 ASCII 转义为 `\uXXXX`，C++ 版写侧用不转义的 UTF-8、**读侧必须同时吃 `\u` 转义与明文**（RapidJSON 默认支持）。
+- 原 .NET 版由 `System.Text.Json` 默认将非 ASCII 转义为 `\uXXXX`，C++ 版写侧用不转义的 UTF-8、**读侧必须同时吃 `\u` 转义与明文**（自研 reader 的 `\u` 分支已实现，含代理对拼接，见 `src/core/Json.cpp`；**该分支无专门单测**，互通由实机读旧 `history.json` 验证）。
 - 内存 UTF-16 ↔ 文件 UTF-8 显式转换，禁止依赖 locale。
 
 ### 8.3 settings.json（继承 v2.0.2）
@@ -435,23 +442,28 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 ## 10. 项目结构
 
 ```
-SuperClip/
-├─ CMakeLists.txt
-├─ res/  app.rc · SuperClip.ico · SuperClip.manifest          # VERSIONINFO + PerMonitorV2 + comctl6
-├─ src/
-│  ├─ main.cpp                       # 单实例、消息循环、异常兜底装配
-│  ├─ app/AppContext.h/.cpp          # 生命周期、服务编排、ExitApp 清理链
-│  ├─ core/ ClipItem.h · ClipType.h · Store.h/.cpp · TableParser.h/.cpp
-│  │       Sha256.h/.cpp · Settings.h/.cpp · Enums.h
-│  ├─ services/ ClipboardMonitor.h/.cpp · PasteService.h/.cpp · StorageService.h/.cpp
-│  │           TrayService.h/.cpp · ProcessPicker.h/.cpp
-│  ├─ native/ Window.h Clipboard.h Foreground.h Keyboard.h Hotkey.h
-│  │           Cursors.h Uuid.h Handle.h(RAII 守卫)
-│  ├─ ui/ MainWindow.h/.cpp · ListRenderer.h/.cpp · TextLayout.h/.cpp
-│  │      Theme.h · SearchEdit.h · ContextMenu.h · HelpWindow.h
-│  └─ util/ Json.h(Utf8 封装 RapidJSON) · Log.h · Time.h
-└─ tests/ test_main.cpp · TableParserTests.cpp · Sha256Tests.cpp
-          ClipItemTests.cpp · StoreTests.cpp
+SuperClip/                            # 本仓库（C++ 重写版；下面是 2026-10-05 的实际落地结构，非规划图）
+├─ cpp/
+│  ├─ CMakeLists.txt                  # 源清单与链接库清单的唯一来源
+│  ├─ build.bat                       # MSVC 出包（自动定位 vcvars64）
+│  ├─ build-tests.sh                  # WSL mingw 交叉构建：内部即 cmake --build，不再手抄清单
+│  ├─ src/
+│  │  ├─ main.cpp                     # 单实例、消息循环、托盘与窗口装配入口
+│  │  ├─ app/AppContext.h/.cpp        # 生命周期、服务编排、ExitApp 清理链
+│  │  ├─ core/ Config.h · IStoreStorage.h（纯头）· ClipItem · Store · TableParser · Text
+│  │  │        Time · Sha256 · Settings · Json（自研极简 JSON，.h/.cpp 成对）
+│  │  ├─ services/ ClipboardMonitor · PasteService · StorageService · TrayService · ProcessPicker
+│  │  ├─ native/ AppDirs · Clipboard · HiddenWindow · SystemInfo（dwmapi/shcore 走 LoadLibrary）
+│  │  │        ComPtr.h · Foreground.h · Keyboard.h · Uuid.h · WinUtil.h（RAII 与纯内联工具）
+│  │  ├─ ui/ MainWindow · ListRenderer · Theme · HoverTip · HelpWindow
+│  │  ├─ res/ app.rc（VERSIONINFO；IDI_APP 行仍注释，图标待补）· app.manifest（PerMonitorV2 + comctl6）
+│  │  └─ util/ Log.h/.cpp
+│  ├─ tests/test_main.cpp             # 40 例，自带极简断言器（无 Catch2）
+│  ├─ tools/PasteTarget.cpp           # 粘贴闭环走查用的极简目标程序
+│  ├─ qa/*.ps1                        # 实机走查驱动（内容一律 ASCII）
+│  ├─ scripts/                        # 发布与验收脚本（CleanAndBuild / PackageRelease / ReleaseChecklist）
+│  └─ installer/ install.bat · uninstall.bat
+└─ doc/                               # 设计契约、项目状态、测试与审计记录
 ```
 
 依赖规则（继承技术方案 §2.2）：`ui → core → services → native` 单向；`Store` 不含任何窗口类型；服务层不反向引用 UI（`CopyMode` 开关由 UI 层写入服务）；**Win32 符号只出现在 `native/`、`services/`、`ui/` 的白名单清单内**，便于按 §1.2 审计"零网络"。
@@ -462,14 +474,15 @@ SuperClip/
 
 ### 11.1 编译配置
 ```
-cl.exe /std:c++20 /EHsc /MT /O2 /GL /W4 /utf-8 /Zi
-link /SUBSYSTEM:WINDOWS /LTCG  user32 kernel32 shell32 gdi32 d2d1 dwrite
-                               ole32 oleaut32 bcrypt comdlg32 dwmapi  SuperClip.res
+cl.exe /std:c++20 /EHsc /MT /O2 /GL /W4 /utf-8 /sdl /guard:cf
+link /SUBSYSTEM:WINDOWS /LTCG
+     user32 kernel32 shell32 gdi32 advapi32 ole32 oleaut32 uuid bcrypt d2d1 dwrite wtsapi32
 ```
+链接库以 `cpp/CMakeLists.txt` 为准（此处只是要点；`dwmapi`/`shcore` 走 `LoadLibraryW` 动态加载不入链，`comdlg32` 本项目不调用）。
 - `/MT` 静态 CRT → 目标机免装 VC++ 运行库（AC-7）
 - `/utf-8` → 源文件中文常量与执行字符集一致，杜绝乱码
 - manifest 内声明 `PerMonitorV2` DPI 与 comctl32 v6
-- 产物体积预期 **1~3 MB**（原 .NET 版 130 MB，R2 消除）
+- 产物体积预期 **1~3 MB**（原 .NET 版 130 MB，R2 消除）。旁证：mingw 交叉构建实测 `-O1` 3.51 MB、`-O3` 3.56 MB，均未达 3 MB；MSVC `/O2 /GL /MT` 版待步骤 12 B 实测
 
 ### 11.2 脚本体系（平移，行为一致）
 | 脚本 | 作用 |
@@ -502,16 +515,16 @@ link /SUBSYSTEM:WINDOWS /LTCG  user32 kernel32 shell32 gdi32 d2d1 dwrite
 | 逐级降级不崩溃 | 多处 | 监听注册失败、托盘失败、钩子失败、光标替换失败均静默降级 |
 
 ### 12.1 测试
-Catch2（header-only，仅测试构建）。
+`tests/test_main.cpp` 自带的极简断言器（`CHECK`/`CHECK_EQ` + 计数汇总），**零第三方**（原计划的 Catch2 未引入）。
+下表为 2026-10-05 交叉构建产物在 Windows 实跑后的**实际**分组与数量（原规划 33 例的口径已过期）：
 
 | 用例组 | 数量 | 覆盖 |
 |---|---|---|
-| `TableParser` IsTable/Parse | **13** | 表格识别、拆分、空单元格/空行、`\r\n`/`\r` 规范化、`CopyMode` 两态、列号不前移 |
-| `Sha256::Hex` | **4** | 一致性、不同内容不同哈希、空串、长文本 |
-| `ClipItem::SourceLabel` | **4** | 普通文本、表格单元格、无行列 |
-| `Store` 状态机 | **新增 ~12** | 去重与收藏态迁移、收藏置顶、非收藏区插入位、沉底、500 上限淘汰、`ClearAll`、`Reset`(C5)、过滤+搜索（含全角/半角）、原地同步后选中/滚动保持 |
-
-前 3 组共 **21 例，与原 `Tests/` 用例语义一一对应**；第 4 组补掉原实现"`SyncInPlace` 依赖 WPF 集合无法单测"的空白。
+| §9.2 `TableParser` IsTable/Parse | **13** | 表格识别、拆分、空单元格/空行、`\r\n`/`\r` 规范化、`CopyMode` 两态、列号不前移 |
+| §9.3 `Sha256::Hex` + `ClipItem::SourceLabel` | **8** | 已知向量、空内容不计哈希、中文稳定小写 hex、不同内容不同哈希、长文本；普通文本无标注、单元格标注、无行列防御 |
+| §9.4 `Store` 状态机 | **15** | 去重与收藏态迁移、插入位＝收藏数量、末位淘汰（C7）、收藏永不淘汰、稳定分区保序、表格整块不倒序、快速沉底（非收藏／收藏区末位 C8）、存盘重载顺序一致、`Reset` 清灰显＋时间降序（C5）、全角/大小写折叠搜索、过滤+搜索+选中保持、收藏仅在【收藏】视图（C10）、标注不上屏仍参与搜索（C11）、清除保留收藏（C12） |
+| §9.6 `Settings` 往返 | **4** | .NET 文件读入并逐字节写回、全字段往返（含绑定进程名）、缺失/损坏回落默认、越界与类型不符按字段作废 |
+| **合计** | **40 例 / 214 断言 / 0 失败** | —— |
 
 **UI 层不做条件编译式打桩**：需要真实 Windows 桌面实机验证（无法在本环境完成的部分，交付时逐项标注"未验证"）。
 
@@ -542,7 +555,7 @@ Catch2（header-only，仅测试构建）。
 | 托盘 | 纯 `Shell_NotifyIcon` | C1 |
 | 监听窗口 | 独立隐藏 top-level 窗口 | C2；且**禁 message-only**（否则丢 `TaskbarCreated` 广播） |
 | 键入模拟 | `SendInput` 取代 `keybd_event` | 行为等价，后者已过时 |
-| JSON | RapidJSON，读侧兼容 `\u` 转义与明文 | 与 .NET 版数据互通 |
+| JSON | 自研极简 JSON（约 180 行），读侧兼容 `\u` 转义与明文 | 与 .NET 版数据互通；原 ADR 的 RapidJSON 因离线取不到包作废 |
 | 哈希 | BCrypt | 系统自带，无第三方 |
 | 粘贴语义 | 写剪贴板 + 夺前台 + 模拟 Ctrl+V | 继承，兼容性最好 |
 | 快速模式触发 | 单击选中 + 空格粘贴 | 继承，防误触 |
