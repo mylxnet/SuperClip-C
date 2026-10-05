@@ -669,8 +669,9 @@ DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（
 **零第三方依赖**：JSON 为自研极简实现（`src/core/Json.h/.cpp`），单测用 `tests/test_main.cpp` 自带的极简断言器（`CHECK/CHECK_EQ` + 计数汇总），不引 RapidJSON 也不引 Catch2。
 
 ### 10.2 资源（`res/app.rc` + manifest）
-- `IDI_APP ICON "SuperClip.ico"`（多尺寸 16/24/32/48/256；托盘取 `SM_CXSMICON`）。
-- `VERSIONINFO`：`FILEVERSION 2,0,2,0` / `PRODUCTVERSION 2,0,2,0`；`StringFileInfo`（`080404b0`）填 `ProductName=SuperClip 超级剪贴板`、`FileDescription`、`CompanyName`、`LegalCopyright`，右键属性可见（继承原 csproj 元数据要求）。
+- `101 ICON "SuperClip.ico"`（多尺寸 16/24/32/48/256，256 档为 PNG 压缩；托盘按 `SM_CXSMICON`、窗口类按 `SM_CXICON` 向系统要档）。
+  **数字 ID 必须与 `Config.h::kIconIdApp`（101）一致**：`TrayService`/`MainWindow` 走 `MAKEINTRESOURCEW(kIconIdApp)` 取图标，ID 对不上只会静默回退系统图标。
+- `VERSIONINFO`：`FILEVERSION`/`PRODUCTVERSION` 与 `Config.h::kVersionText` 同号（`PackageRelease.bat` 出包前用 `findstr` 校验，不一致拒绝打包）；`StringFileInfo`（`080404b0`）填 `ProductName=SuperClip 超级剪贴板`、`FileDescription`、`CompanyName`、`LegalCopyright`，右键属性可见（继承原 csproj 元数据要求）。
 - manifest：`compatibility` Win7/8/8.1/10 GUID 全列；` dpiAware=true` + `dpiAwareness=PerMonitorV2,system`；`dependent → Microsoft.Windows.Common-Controls version 6.0.0.0`（`EM_SETCUEBANNER` 依赖）。
 - `SetProcessDpiAwarenessContext` 由代码在 `wWinMain` 首行调用（早于任何窗口创建）。
 
@@ -679,7 +680,7 @@ DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（
 |---|---|
 | `build.bat` | 探测 `vcvars64.bat`（VS2022 Community/BuildTools）→ `cmake -S . -B build` → `cmake --build build --config Release` |
 | `CleanAndBuild.bat` | `rmdir /s /q build` 后同上（发布前必用，防缓存） |
-| `PackageRelease.bat` | 从 `src/res/app.rc` 正则抓 `FILEVERSION` → 复制 `build/Release/SuperClip.exe` + `README.md` + `CHANGELOG.md` + `installer/*.bat` → 生成 `SuperClip_v2.0.2.exe` → `Compress-Archive` 出 `release\SuperClip_v2.0.2_portable.zip`（英文命名） |
+| `PackageRelease.bat` | 从 `src/res/app.rc` 正则抓 `FILEVERSION`（抓不到即硬失败）→ **校验 `src/core/Config.h` 的 `kVersionText` 含同一 `vX.Y.Z`**（不一致拒绝出包，agent.md 四.2）→ 复制 `build/Release/SuperClip.exe` + `README.md` + `CHANGELOG.md` + `installer/*.bat` → 生成 `SuperClip_v<VER>.exe` → `Compress-Archive` 出 `release\SuperClip_v<VER>_portable.zip`（英文命名） |
 | `installer\install.bat` | 复制 exe 到 `%ProgramFiles%\SuperClip\`（版本化名还原为固定名）+ `WScript.Shell` 建 `.lnk` |
 | `installer\uninstall.bat` | `taskkill /im SuperClip.exe /f` → 删目录与快捷方式 |
 

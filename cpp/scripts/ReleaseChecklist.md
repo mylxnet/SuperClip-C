@@ -33,9 +33,10 @@ WTSAPI32.dll  bcrypt.dll  d2d1.dll  ole32.dll  msvcrt.dll
 - [ ] `dumpbin /imports build\Release\SuperClip.exe` → 同上，输出贴进发布记录（A.4 要求的结案证据）
 - [ ] `cl /W4` 零警告（mingw 侧只开了 `-Wall -Wextra`）
 - [ ] `__try/__except` 消息兜底路径实测（mingw 下该宏不可用）
-- [ ] `app.rc` 的 manifest + 图标内嵌生效。交叉构建（CMake + windres）已把 `.rc` 编进 `.rsrc`，
-      `Get-Item SuperClip.exe | % VersionInfo` 能读到 `FileVersion=2.0.2.0`；但图标仍未解（`app.rc:6` 注释态），
-      RT_MANIFEST 是否被 OS 实际加载要在 MSVC 产物上 `dumpbin /resources` 结案
+- [ ] `app.rc` 的 manifest + 图标内嵌生效。交叉构建（CMake + windres）已把 `.rc` 编进 `.rsrc`（图标接入后
+      `.rsrc` 由 `0xac8` 增至 `0x140f8`，exe 相应 +79,872 B），`Get-Item SuperClip.exe | % VersionInfo` 能读到与
+      `app.rc` 同值的 `FileVersion`，`[System.Drawing.Icon]::ExtractAssociatedIcon` 能取出 32×32 的应用图标；
+      RT_MANIFEST 是否被 OS 实际加载、图标在真机托盘/任务栏的观感仍要在 MSVC 产物上 `dumpbin /resources` + 实机结案
 - [ ] exe 体积 ≤ 3 MB、启动到可交互 < 300 ms 的实测值
 - [ ] AC-7 / AC-8（第 3 节操作单）
 
@@ -76,6 +77,7 @@ WTSAPI32.dll  bcrypt.dll  d2d1.dll  ole32.dll  msvcrt.dll
 | `install.bat` 的 exe 定位优先级 | 空目录→`SRC=[]`；只有版本化名→命中 `SuperClip_v9.9.9.exe`；固定名存在→固定名优先 |
 | `WScript.Shell` 建 `.lnk` 的那一整行 | `ps-ok`，两个 `.lnk` 生成成功；`ProgramData\...\Programs` 与 Desktop 路径 `Test-Path` 均 True |
 | `Compress-Archive` + `%%~zF` 体积门 | zip 2706 B，`if %ZIPSIZE% GTR 3145728` 判定分支正常 |
+| 版本号一致性校验（2.0.3 那轮新增，防 agent.md 四.2 的三处不同号） | 同一段 `findstr`+`for /f` 从 `app.rc` 得 `RAW=2,0,3,0` → `VER=2.0.3`；`findstr /c:"v%VER%" src\core\Config.h` → `errorlevel 0`（放行），对照 `findstr /c:"v9.9.9"` → `errorlevel 1`（拒绝出包）。探针为 Temp 脚本，跑完即删 |
 
 ### 本轮踩到的一个真问题：`.bat` 里不能写中文
 

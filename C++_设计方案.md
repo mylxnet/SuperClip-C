@@ -285,7 +285,7 @@ WndProc(WM_CLIPBOARDUPDATE):
 - 降级链：钩子安装失败 → 直接绑 `_lastExternalWindow` 并在状态栏提示；Esc / 再点靶心 / 热键 / 8s 超时 / 锁屏 / 会话结束
   → 同一条 `Cancel()`：卸钩子、复位光标、恢复主窗，**已有绑定保持不变**（取消的是这次点选，不是上次的绑定）。
   注：点选期间主窗是隐藏且无前台，Esc 与"再点靶心"实际收不到按键/点击，可观测的取消入口是热键与 8s 超时。
-- 状态指示：靶心红=未绑定、绿=已绑定；状态栏左侧显示绑定进程名。
+- 状态指示：靶心红=未绑定、绿=已绑定；状态栏左侧显示绑定进程名，右侧显示 `vX.Y.Z  by Mr lin`（版本号在署名之前，agent.md 四.3；文本取自 `Config.h::kVersionText` + `kAppSignature`，右对齐格式 `Theme::MetaRight()`）。
 - `GetPasteTarget()`：`IsWindow(_boundWindow)` 存活则用它，否则回退 `_lastExternalWindow`。
   **R5 语义调整（2026-10-04 用户决议）**：绑定窗口已关闭时**解绑**（靶心转红、状态栏清空），
   不再自动改绑呼出前窗口——那等于凭空造出一个用户没做过的绑定，会把粘贴打到非当前应用。
@@ -293,7 +293,7 @@ WndProc(WM_CLIPBOARDUPDATE):
 
 ### 6.6 系统托盘（纯 Win32）
 - `Shell_NotifyIconW`：`NIM_ADD/MODIFY/DELETE`，`NOTIFYICONDATA` 带 `uCallbackMessage = WM_APP+1`。
-- 图标：`LoadImageW(exe, MAKEINTRESOURCE(图标ID))`，失败回退 `LoadIcon(nullptr, IDI_APPLICATION)`。
+- 图标：`LoadImageW(exe, MAKEINTRESOURCEW(kIconIdApp=101), IMAGE_ICON, SM_CXSMICON…)`，失败回退 `LoadIcon(nullptr, IDI_APPLICATION)` 并记 `LogWarn`。
 - `WM_LBUTTONDBLCLK` → 打开主窗口；`WM_RBUTTONUP` → `SetForegroundWindow(自身)` 后 `CreatePopupMenu`+`AppendMenuW`+`TrackPopupMenuEx(TPM_RETURNCMD)`（前置置顶是标准范式，保证点击菜单外可消失）→「打开 / 退出」。
 - **Explorer 重启自愈**：`RegisterWindowMessageW(L"TaskbarCreated")`，收到即重新 `NIM_ADD`。
 - 释放：`NIM_DELETE` + 销毁托盘窗口。
@@ -341,7 +341,7 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 │  3  普通文本…                       12:28:00  ☆   │
 │  …（已粘贴项灰显 + 半透明；收藏项只在【收藏】视图出现）│
 ├──────────────────────────────────────────────────┤
-│  已绑定：EXCEL                          v2.0.2    │ ← 状态栏 22px
+│  已绑定：EXCEL            v2.0.3  by Mr lin       │ ← 状态栏 22px：版本号在署名之前
 └──────────────────────────────────────────────────┘
 ```
 
@@ -456,7 +456,7 @@ SuperClip/                            # 本仓库（C++ 重写版；下面是 20
 │  │  ├─ native/ AppDirs · Clipboard · HiddenWindow · SystemInfo（dwmapi/shcore 走 LoadLibrary）
 │  │  │        ComPtr.h · Foreground.h · Keyboard.h · Uuid.h · WinUtil.h（RAII 与纯内联工具）
 │  │  ├─ ui/ MainWindow · ListRenderer · Theme · HoverTip · HelpWindow
-│  │  ├─ res/ app.rc（VERSIONINFO；IDI_APP 行仍注释，图标待补）· app.manifest（PerMonitorV2 + comctl6）
+│  │  ├─ res/ app.rc（VERSIONINFO + 101 ICON）· app.manifest（PerMonitorV2 + comctl6）· SuperClip.ico
 │  │  └─ util/ Log.h/.cpp
 │  ├─ tests/test_main.cpp             # 40 例，自带极简断言器（无 Catch2）
 │  ├─ tools/PasteTarget.cpp           # 粘贴闭环走查用的极简目标程序

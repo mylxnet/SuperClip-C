@@ -3,7 +3,7 @@
 > 核实对象：`SuperClip_审计报告.md`（2026-10-05，第三方只读审计，非本人撰写）
 > 本文作者：本仓实施方（被审计方）
 > 用途：把外部审计逐条对码核实后的**事实基线 + 整改清单**固化，供 §11 步骤 12 B 段一并执行
-> 状态：**第 1、2、3 档已全部落地（2026-10-05）；WSL 按项目隔离同日完成**。第 2 档 #4（`CHANGELOG.md`）与第 4 档（版本号/署名/图标/`doc/`/README）在执行「完成所有后续工作」那一轮继续。执行记录见 §6，走查记录见 §6.1，CMake 单一清单见 §6.2，契约原文一致性 + WSL 隔离见 §6.3。
+> 状态：**第 1、2、3 档已全部落地（2026-10-05）；WSL 按项目隔离同日完成；第 4 档首批（版本号 2.0.3 三处一致 + 署名 + 图标）已落地，见 §6.4**。第 2 档 #4（`CHANGELOG.md`）与第 4 档余项（`doc/` 四件套 / README 11 段 / QA 脚本去留）在执行「完成所有后续工作」那一轮继续。执行记录见 §6，走查记录见 §6.1，CMake 单一清单见 §6.2，契约原文一致性 + WSL 隔离见 §6.3，版本/署名/图标见 §6.4。
 
 ---
 
@@ -119,10 +119,14 @@
 | 6 | 交叉构建改走 CMake（`-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++`），消灭手抄清单；`app.rc` 的 windres 差异用 `if(MSVC)` 隔离 | `cpp/build-tests.sh`、`CMakeLists.txt:66-67` | **已落地（2026-10-05）**：WSL 装 `cmake` 3.22.1，`build-tests.sh` 改为驱动 `cmake --build`，脚本内源/库清单全删；windres 实测能编 `app.rc`，无需 `if(MSVC)` 隔离。见 §6.2 |
 | 7 | JSON 选型 ADR 由 RapidJSON 改写为"自研极简 JSON"，删 §10.1 `:661` 的 RapidJSON/Catch2 表述 | 设计方案 `:46,54,394,452,545`、技术方案 `:661` | **已落地（2026-10-05，授权见 §6.3）**：§1 选型表、§1.1 不引入清单、§1.2 依赖面清单、§10 结构树、§11.1 编译配置、§12.1 测试表、§394 `\u` 条款、§557 ADR 行、技术方案 §9.1/§10.1/A.4 全部改为实测口径。见 §6.3 |
 
-### 第 4 档 · 已推后的 agent.md 整改（用户明示"文档的事往后推"，此处仅登记不启动）
+### 第 4 档 · agent.md 整改（2026-10-05 起随「完成所有后续工作」逐批落地）
 
 图标 `SuperClip.ico`（16/24/32/48/256）+ 解开 `app.rc:6`；状态栏「by Mr lin」署名（版本号在前）与 `app.rc:29` 版权同步；`doc/` 四件套；README 按 11 段模板重写（现为开发者向）；升版本号三处一致；一次性 QA 脚本去留。
-其中**「WSL 按项目隔离到 `E:\public`」已于 2026-10-05 提前落地**（本项属环境而非文档，不需授权），见 §6.3 末段。
+
+进度：**图标已落地**、**署名已落地**、**版本号升到 2.0.3 且三处一致并加了出包校验**（均见 §6.4）。
+`app.rc` 的 `LegalCopyright` 仍是 `Copyright © SuperClip`——改成什么措辞属文案裁决，**未动，待用户定**。
+`doc/` 四件套、README 11 段、QA 脚本去留在后续批次。
+另：**「WSL 按项目隔离到 `E:\public`」提前落地**（属环境不属文档，不需授权），见 §6.3 末段。
 
 ### 第 5 档 · 明确不做（附理由）
 
@@ -203,7 +207,7 @@ LINK_EXIT=0  UNDEFINED=0
 | 第 3 档 #6 交叉构建走 CMake | **已完成**（详见 §6.2） | WSL 装 `cmake` 3.22.1；`build-tests.sh` 改为驱动 `cmake --build`，删除脚本内手抄的源/库清单与 `--app` 手工链接行；`CMakeLists.txt` 两处过时注释同步 | `CONFIGURE_RC=0`、`BUILD_RC=0`、error/undefined **0**、自有源 warning **0**；`sc_tests.exe` Windows 实跑 40/214/0；`objdump -p` 见 `WTSAPI32.dll` 入导入表；windres 编 `app.rc` 成功且 Windows 读到 `FileVersion 2.0.2.0` |
 | 回归 | **无回归** | —— | `build-tests.sh` → `sc_tests.exe` 在 Windows 实跑：**用例 40、断言 214、失败 0**；`build-tests.sh --app` → `SuperClip.exe` 编译通过（3,507,020 B）。〔该 `--app` 参数随后被 §6.2 的 CMake 单一清单构建取代〕 |
 | 第 3 档 #5 #7 契约原文一致性 | **已完成**（详见 §6.3） | 技术方案 §9.1/§10.1/A.4、设计方案 §1/§1.1/§1.2/§10/§11.1/§12.1/§394/§557 全部改为实测口径；RapidJSON/Catch2/`VS_DPI_AWARE`/`comdlg32`/旧例数等过期表述清零 | 交叉引用逐条与 `ls`、`CMakeLists.txt`、`objdump`、`sc_tests` 实跑输出核对；发现并修回两处编辑事故（`Qt` 被误删出禁止清单、结构树里写了尚不存在的 `SuperClip.ico`） |
-| agent.md 二.2 · WSL 按项目隔离 | **已完成**（详见 §6.3） | 新建专属发行版 `superclip`（数据 `E:\public\superclip\wsl`，初始化 `E:\public\superclip\provision.sh`，aliyun 源）；`build-tests.sh` 中间产物改落 `$HOME/superclip-build`，本地只收两个 exe；共用发行版 `lxsyzd` 未动 | 冷构建 `RC=0/ERR=0/CW=0/WARN=0`；`sc_tests.exe` 40/214/0；`SuperClip.exe` 3,556,680 B、`FileVersion 2.0.2.0`；`Clock skew` 告警归零 |
+| agent.md 二.2 · WSL 按项目隔离 | **已完成**（详见 §6.3） | 新建专属发行版 `superclip`（数据 `E:\public\superclip\wsl`，初始化 `E:\public\superclip\provision.sh`，aliyun 源）；`build-tests.sh` 中间产物改落 `$HOME/superclip-build`，本地只收两个 exe；共用发行版 `lxsyzd` 未动 | 冷构建 `RC=0/ERR=0/CW=0/WARN=0`；`sc_tests.exe` 40/214/0；`SuperClip.exe` 3,556,680 B、`FileVersion 2.0.2.0`；`Clock skew` 当轮冷构建 0 条（**并非根除**，后续增量轮仍会出现，见 §6.2 末段修正）|
 
 > 表内出现的 `build-tests.sh --app` 是当时命令的原样记录，该参数已随 §6.2 删除；现在一条 `bash build-tests.sh` 同时产出 `sc_tests.exe` 与 `SuperClip.exe`。
 
@@ -311,7 +315,10 @@ DWrite.dll  GDI32.dll  KERNEL32.dll  SHELL32.dll  USER32.dll  WTSAPI32.dll  bcry
 **一处环境噪声**：冷构建日志有 6 行 `gmake: warning: Clock skew detected`（源文件在 `/mnt/e`，其 Windows mtime 比 WSL 时钟超前约 2 s，刚写出的 `.o` 反而"更旧"）。
 实测 `date` 与 `Get-Date` 差 2 s；冷构建没有"跳过重编"的可能，增量构建那一轮则无此告警，判定为无害。
 若日后出现"改了码没重编"的怪象，先校时（`wsl --shutdown` 会同步一次），别怀疑构建系统。
-**该告警现已随 §6.3 的项目隔离消失**：中间产物改落 `/root/superclip-build`（ext4 原生路径，不在 `/mnt/e`），当轮冷构建日志 0 条 clock skew。
+**修正一处过满的结论**：中间产物迁入 `/root/superclip-build` 后该告警**并未根除**——署名那一轮的增量构建又出现 5 条 `Clock skew detected`，
+当时实测 Windows 13:57:43 对 WSL 13:57:56（漂移方向与前次相反，且扩大到 13 s）。结论收窄为：
+告警取决于两侧时钟瞬时差、方向会变；构建目录换到 ext4 只减少了一半暴露面（`.o` 不再与源文件跨文件系统比时间）。
+真正要防的是"源文件 mtime 落在未来 → make 认为目标已最新"，所以**改完码看有没有 `Building CXX object` 行**，别只看 `RC=0`。
 
 ### 6.3 第 3 档 #5 + #7 落地 + WSL 按项目隔离（2026-10-05，同日追加）
 
@@ -333,4 +340,24 @@ DWrite.dll  GDI32.dll  KERNEL32.dll  SHELL32.dll  USER32.dll  WTSAPI32.dll  bcry
 | 迁移后回归 | 全新发行版冷构建 `RC=0 / ERR=0 / CW=0 / WARN=0`，中间产物 `/root/superclip-build`；Windows 侧 `sc_tests.exe` 实跑 **40/214/0**，`SuperClip.exe` **3,556,680 B**、`FileVersion 2.0.2.0`（与 §6.2 同值，说明换发行版未改变产物） |
 
 **残留（不在本档）**：`msvcrt.dll` 是否随 MSVC `/MT` 消失、RT_MANIFEST 是否被 OS 实际加载、`advapi32`/`oleaut32` 能否从清单删除 —— 全部归步骤 12 B。
+
+### 6.4 第 4 档首批：版本号 2.0.3 三处一致 + 状态栏署名 + 应用图标（2026-10-05）
+
+对应审计报告的 **E5（版本号三处一致性风险，P2）** 与 **R2（界面缺署名，P1）**。
+
+| 动作 | 落地内容 | 实测 |
+|---|---|---|
+| 版本号升到 2.0.3 | `Config.h::kVersionText` `v2.0.2`→`v2.0.3`；`app.rc` `FILEVERSION`/`PRODUCTVERSION`→`2,0,3,0`、`FileVersion`/`ProductVersion` 字符串→`2.0.3.0`；`app.manifest` `assemblyIdentity version`→`2.0.3.0` | Windows 侧 `VersionInfo` 读到 `FileVersion=2.0.3.0  ProductVersion=2.0.3.0` |
+| 出包时强制校验（E5 的根因是"靠人肉"） | `PackageRelease.bat` 抓到 `FILEVERSION` 后，`findstr /c:"v%VER%" src\core\Config.h`，`errorlevel 1` 即 `exit /b 1` 拒绝出包 | Temp 探针（跑完已删）：`RAW=2,0,3,0` → `VER=2.0.3`；真值 `match_real=0`（放行）、假值 `v9.9.9` `match_fake=1`（拒绝） |
+| 状态栏署名（R2） | `Config.h` 新增 `kAppSignature = L"by Mr lin"` 与 `kStatusRightW = 116.f`；`DrawStatusBar` 右侧画 `v2.0.3  by Mr lin`（版本号在前），左栏文字止于 `w-kPad-kStatusRightW` | 编译通过；**屏幕上的实际排版未验证**，与图标一并待实机走查 |
+| 右对齐文本格式 | `Theme::MetaRight()`：与 `Meta()` 同字号、`DWRITE_TEXT_ALIGNMENT_TRAILING`。**不用 `IDWriteTextFormat::Clone`**——它要 `_WIN32_WINNT ≥ 0x0603`，本项目基线 Win7（`0x0601`），故改为向工厂再要一份 | mingw 侧 0 错误 0 告警（`Clone` 那次编译失败正是这条约束暴露出来的） |
+| 应用图标 | 生成 1024 底图 → 右下角「Qoder AI 生成」水印用**镜像左下角**覆盖（对称背景，肉眼无痕）→ 方幅裁切 `916x916+54+50` → ImageMagick `-define icon:auto-resize=256,48,32,24,16` 出 `cpp/src/res/SuperClip.ico`（79,077 B，256 档为 PNG 压缩）；`app.rc` 解开为 `101 ICON "SuperClip.ico"`，ID 与 `Config.h::kIconIdApp` 对齐。整条流水线固化成 **`cpp/scripts/make-icon.sh`**（底图 `src/res/icon-1024-source.png` 一并入库，属可复用打包素材） | 重跑脚本产物 **md5 一致**（`2e2a8d51ffe7f20409506ab10f210320`）→ 生成过程可复现。`.rsrc` 由 `0xac8` → **`0x140f8`**；exe 3,557,811 → **3,637,683 B**（+79,872）；`[System.Drawing.Icon]::ExtractAssociatedIcon(exe)` 取出 32×32，**读图核对**为本图标而非系统默认 |
+| 窗口类图标 | `MainWindow::Create` 的 `WNDCLASSEXW` 补 `hIcon`/`hIconSm`（`LoadImageW` + `LR_SHARED`，取不到留空由系统回退）——此前两处都是 0，任务栏/Alt-Tab 用通用图标 | 编译通过；真机观感未验证 |
+
+**图标小尺寸可读性（读图核对，非猜测）**：16/24/32/48 四档放大 6 倍逐一看过。24 及以上轮廓清楚；
+**16 px 档偏糊**——青绿色 Clipboard 方框与琥珀色回形针仍可分辨，但白色圆角底板吃掉了约 1/4 画幅。
+托盘在 100% 缩放下正是 16 px 档，属"能认出是它、但不锐利"。要更好只能为 16 px 单独画一版极简图（去掉白底、加粗描边），本轮未做。
+
+**体积影响**：图标使 exe +79,872 B。§10.3 的 ≤3 MB 判据本来就未达标（交叉构建 -O3 已 3.56 MB），
+这一项让 MSVC 出包时的体积门更紧，记录在 `cpp/scripts/ReleaseChecklist.md`。
 

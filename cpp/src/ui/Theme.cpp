@@ -67,6 +67,14 @@ bool Theme::InitFonts(IDWriteFactory* factory) {
     fmtButton_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     fmtButton_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
   }
+  // 状态栏右侧的「vX.Y.Z  by Mr lin」要贴着右内边距走，Meta() 本身是左对齐（列表时间戳共用）。
+  // 不用 IDWriteTextFormat::Clone：它要 _WIN32_WINNT ≥ 0x0603，本项目基线是 Win7（0x0601）。
+  fmtMetaRight_.attach(MakeFormat(factory, kFontMeta));
+  if (fmtMetaRight_) {
+    fmtMetaRight_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+  } else {
+    fmtMetaRight_ = fmtMeta_;   // 兜底：宁可左对齐，也不要版本显示不出来
+  }
   return fmtBody_ && fmtMeta_ && fmtTitle_ && fmtButton_ && fmtStar_;
 }
 

@@ -36,6 +36,7 @@ class Theme {
   IDWriteTextFormat* Title() const { return fmtTitle_.get(); }
   IDWriteTextFormat* Body() const { return fmtBody_.get(); }
   IDWriteTextFormat* Meta() const { return fmtMeta_.get(); }
+  IDWriteTextFormat* MetaRight() const { return fmtMetaRight_.get(); }   // 状态栏右侧：同字号右对齐
   IDWriteTextFormat* Button() const { return fmtButton_.get(); }
   IDWriteTextFormat* Star() const { return fmtStar_.get(); }
 
@@ -44,7 +45,7 @@ class Theme {
  private:
   static IDWriteTextFormat* MakeFormat(IDWriteFactory* f, float sizeDip);
 
-  Com<IDWriteTextFormat> fmtTitle_, fmtBody_, fmtMeta_, fmtButton_, fmtStar_;
+  Com<IDWriteTextFormat> fmtTitle_, fmtBody_, fmtMeta_, fmtButton_, fmtStar_, fmtMetaRight_;
   Com<ID2D1SolidColorBrush> windowBg_, cardBg_, cardStroke_, selectedStroke_, favoriteBg_,
       hoverBg_, ink_, inkPasted_, muted_, mutedPasted_, titleBg_, toolBg_,
       statusBg_, btnBg_, btnBgHover_, accent_, starOn_, bindOff_, bindOn_;

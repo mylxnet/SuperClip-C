@@ -22,7 +22,7 @@ bool TrayService::Create(HINSTANCE inst) {
                  GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
                  LR_DEFAULTCOLOR | LR_SHARED));
   if (!nid_.hIcon) {
-    nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);          // M5 前无自定义图标资源时回退
+    nid_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);          // §5.4 回退链：图标资源缺失时用系统默认
     LogWarn(L"tray", L"应用图标缺失，使用系统默认图标");
   }
   wcscpy_s(nid_.szTip, kTrayTip);

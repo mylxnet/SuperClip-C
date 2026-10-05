@@ -117,6 +117,16 @@ bool MainWindow::Create(HINSTANCE inst, AppContext& ctx) {
   wc.lpfnWndProc = &MainWindow::Entry;
   wc.hInstance = inst;
   wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+  // 任务栏 / Alt-Tab 用大图标，小图标按系统小图标尺寸取；取不到就留空由系统回退（§5.4 回退链）。
+  // LR_SHARED：句柄由系统持有，不需要（也不允许）自己 DestroyIcon。
+  wc.hIcon = static_cast<HICON>(
+      LoadImageW(inst, MAKEINTRESOURCEW(kIconIdApp), IMAGE_ICON,
+                 GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+                 LR_DEFAULTCOLOR | LR_SHARED));
+  wc.hIconSm = static_cast<HICON>(
+      LoadImageW(inst, MAKEINTRESOURCEW(kIconIdApp), IMAGE_ICON,
+                 GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+                 LR_DEFAULTCOLOR | LR_SHARED));
   wc.lpszClassName = kMainClass;
   if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     LogError(L"ui", L"主窗口类注册失败");
@@ -824,10 +834,12 @@ void MainWindow::DrawStatusBar(ID2D1RenderTarget* rt, float w, float h) {
     }
   }
   rt->DrawText(left.c_str(), static_cast<UINT32>(left.size()), theme_.Meta(),
-               D2D1::RectF(kPadF, bar.top, w - 80.f, h), theme_.Muted(),
+               D2D1::RectF(kPadF, bar.top, w - kPadF - kStatusRightW, h), theme_.Muted(),
                D2D1_DRAW_TEXT_OPTIONS_NONE);
-  rt->DrawText(kVersionText, static_cast<UINT32>(wcslen(kVersionText)), theme_.Meta(),
-               D2D1::RectF(w - kPadF - 68.f, bar.top, w - kPadF, h), theme_.Muted(),
+  // 署名规则：版本号在前、署名在后（agent.md 四.3）
+  const std::wstring right = std::wstring(kVersionText) + L"  " + kAppSignature;
+  rt->DrawText(right.c_str(), static_cast<UINT32>(right.size()), theme_.MetaRight(),
+               D2D1::RectF(w - kPadF - kStatusRightW, bar.top, w - kPadF, h), theme_.Muted(),
                D2D1_DRAW_TEXT_OPTIONS_NONE);
 }
 

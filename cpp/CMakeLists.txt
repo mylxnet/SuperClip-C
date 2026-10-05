@@ -68,7 +68,7 @@ else()
   target_compile_options(SuperClip PRIVATE -Wall -Wextra -Wno-unused-parameter
                          -Wno-cast-function-type -U__STRICT_ANSI__ -fno-strict-aliasing)
   target_link_options(SuperClip PRIVATE -municode -static)   # -static = 静态 CRT，免运行库
-  # 实测：windres 能编 src/res/app.rc（manifest + VERSIONINFO 进 .rsrc，Windows 侧读到 FileVersion 2.0.2.0）。
+  # 实测：windres 能编 src/res/app.rc（manifest + VERSIONINFO 进 .rsrc，Windows 侧能读到 FileVersion）。
   # 但 RC.exe 与 windres 对 RT_MANIFEST 的处理差异只能在 MSVC 产物上用 dumpbin /resources 结案，见步骤 12 B。
 endif()
 

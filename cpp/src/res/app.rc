@@ -1,17 +1,18 @@
 #include <windows.h>
 
 // SuperClip 资源（技术方案 §10.2）
-// 图标：M5 出包时补 SuperClip.ico（16/24/32/48/256 多尺寸）并解开下一行；
-// 当前缺图标资源，托盘按 §5.4 的回退链使用系统应用图标。
-// IDI_APP ICON "SuperClip.ico"
+// 主图标：数字 ID 必须与 src/core/Config.h 的 kIconIdApp（101）一致，
+// TrayService 用 MAKEINTRESOURCEW(kIconIdApp) 取它；对不上就静默回退到系统图标。
+// 尺寸集 16/24/32/48/256（256 为 PNG 压缩），托盘按 SM_CXSMICON 向系统要对应档。
+101 ICON "SuperClip.ico"
 
 1 24 "app.manifest"        // RT_MANIFEST：DPI 感知 + 兼容性 + comctl6
 
 // 版本号写死为字面量：windres/RC.exe 对 FILEVERSION 的宏展开行为不一致，
 // 且 PackageRelease.bat 以正则抓取 FILEVERSION 行作为发版来源。
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,0,2,0
- PRODUCTVERSION 2,0,2,0
+ FILEVERSION 2,0,3,0
+ PRODUCTVERSION 2,0,3,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -24,12 +25,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName",  "SuperClip"
       VALUE "FileDescription", "SuperClip 超级剪贴板"
-      VALUE "FileVersion",  "2.0.2.0"
+      VALUE "FileVersion",  "2.0.3.0"
       VALUE "InternalName", "SuperClip"
       VALUE "LegalCopyright", "Copyright © SuperClip"
       VALUE "OriginalFilename", "SuperClip.exe"
       VALUE "ProductName",  "SuperClip 超级剪贴板"
-      VALUE "ProductVersion", "2.0.2.0"
+      VALUE "ProductVersion", "2.0.3.0"
     END
   END
   BLOCK "VarFileInfo"

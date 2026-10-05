@@ -35,7 +35,7 @@ if "%RAW%"=="" (
   echo [fail] no line matching "^ *FILEVERSION" in %RC%. Refusing to guess a version.
   exit /b 1
 )
-rem FILEVERSION is written as 2,0,2,0 - take the first three fields for the package name.
+rem FILEVERSION is written as 2,0,3,0 - take the first three fields for the package name.
 set "VER="
 for /f "tokens=1,2,3 delims=," %%A in ("%RAW%") do set "VER=%%A.%%B.%%C"
 if "%VER%"=="" (
@@ -43,6 +43,15 @@ if "%VER%"=="" (
   exit /b 1
 )
 echo       version = v%VER%  (FILEVERSION %RAW%)
+
+rem agent.md 4.2: app.rc FILEVERSION, Config.h kVersionText and the on-screen version must carry the
+rem same number. The UI draws kVersionText, so comparing the two source files catches a missed bump.
+findstr /c:"v%VER%" "src\core\Config.h" >nul 2>&1
+if errorlevel 1 (
+  echo [fail] src\core\Config.h has no v%VER% - it disagrees with app.rc, refusing to package.
+  exit /b 1
+)
+echo       version check passed: Config.h kVersionText carries v%VER%
 
 echo [3/5] staging ...
 rmdir /s /q "%STAGE%" >nul 2>&1

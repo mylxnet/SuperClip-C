@@ -55,8 +55,12 @@ constexpr int kHelpW = 420, kHelpH = 300;
 constexpr int kHelpTitleH = 40;                 // 顶部标题带（同时是拖拽区）
 constexpr int kHelpBtnH = 30, kHelpNavBtnW = 76, kHelpCloseBtnW = 56, kHelpBtnGap = 8;
 
-// 与 src/res/app.rc 的 FILEVERSION 同步（PackageRelease.bat 以 app.rc 为准）
-inline constexpr wchar_t kVersionText[]  = L"v2.0.2";
+// 与 src/res/app.rc 的 FILEVERSION 同步（PackageRelease.bat 以 app.rc 为准，并校验本行）
+inline constexpr wchar_t kVersionText[]  = L"v2.0.3";
+// 署名固定（agent.md 四.3：界面上版本号写在署名之前）
+inline constexpr wchar_t kAppSignature[] = L"by Mr lin";
+// 状态栏右侧「vX.Y.Z  by Mr lin」预留宽度（DIP），左栏文字到此为止，避免重叠
+constexpr float kStatusRightW = 116.f;
 
 // DIP → 物理像素（96dpi 基准）。绘制期一律用 DIP，只有真子窗（搜索框）与帮助窗边框要换算。
 // 必须是**运行期**函数：MulDiv 不是 constexpr，放 constexpr 里整个 TU 编译不过。
