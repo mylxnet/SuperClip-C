@@ -39,6 +39,14 @@ constexpr int kTitleIconDip = 18, kTitleIconGap = 6;        // 标题栏应用�
 constexpr int kSearchClearDip = 16, kSearchClearInset = 6;  // 搜索框右端清除叉号边长 / 距右内缘
 constexpr int kTipOffsetChars = 3;   // 气泡相对条目左缘右移的全角字数（字宽运行期实测）
 inline constexpr wchar_t kProjectUrl[] = L"…github.com/mylxnet/SuperClip-C";  // 署名单击目标
+// v2.2.0 新增、v2.3.0 修订、v2.3.3 改兜底键（C15 接力；仍同一文件、仍是唯一来源）
+constexpr UINT WM_APP_RELAY_TRIGGER = WM_APP + 7;  // 0x8007 钩子投来的目标根窗
+constexpr WPARAM kWtsSessionUnlock = 2;            // v2.3.0：解锁后由 SyncRelayHook 按状态装回
+constexpr UINT     kRelayDedupeMs  = 300;          // Alt+双击的两次按下只算一次
+constexpr int      kHotkeyIdRelay  = 2;            // 兜底键 id（v2.3.3 起 Alt+`，此前 Ctrl+Alt+空格）
+constexpr UINT     kVkOem3         = 0xC0;         // ` ~ 键：呼出键与兜底键共用同一键位
+constexpr UINT     kModNoRepeat    = 0x4000;       // MOD_NOREPEAT：旧 SDK 未导出，固定值兜底
+// v2.3.3 删除 kVkSpace(0x20)：兜底键改用 kVkOem3 后失去唯一引用
 }
 ```
 
@@ -82,14 +90,15 @@ ui/  ──▶ core/ ──▶ services/ ──▶ native/ ──▶ Win32/D2D/D
 | `src/services/StorageService.h/.cpp` | history.json 原子读写与容错 | 210 |
 | `src/services/TrayService.h/.cpp` | `Shell_NotifyIcon` + 菜单 + `TaskbarCreated` 自愈 | 210 |
 | `src/services/ProcessPicker.h/.cpp` | WH_MOUSE_LL 点选 + 光标替换 + 超时/锁屏取消；`FindWindowByProcess` 按进程名找回绑定窗口（§8.3，唯一候选才返回） | 230 |
+| `src/services/RelayService.h/.cpp` | **（v2.2.0 引入 / v2.3.0 无开关，C15）** WH_MOUSE_LL 接力钩子：只管"机制"——**幂等重装**的装/卸、Alt 判定、去重、`PostMessage` 投递目标根窗。**不含策略**（该不该装、取哪条、贴到哪、怎么提示的裁决全在 `AppContext::SyncRelayHook()`）；进程内 `instance_` 转发回调 | 43 + 75 |
 | `src/ui/MainWindow.h/.cpp` | 窗口类、消息路由、命中分发、焦点/模式编排 | 938 |
 | `src/ui/ListRenderer.h/.cpp` | 行测量、TextLayout 缓存、绘制、滚动 | 430 |
 | `src/ui/Theme.h/.cpp` | 颜色/字号/几何图标路径、高对比度切换 | 200 |
 | `src/ui/HoverTip.h/.cpp` | 悬浮全文气泡（自绘弹出窗，GDI 量算与绘制，不依赖 comctl32） | 190 |
 | `src/ui/Widgets.h/.cpp` | `EDIT`（占位自绘）、自绘按钮/菜单（步骤 9+ 才建，气泡已落 `HoverTip`） | 180 |
-| `src/ui/HelpWindow.h/.cpp` | 9 步模态引导 | 150 |
+| `src/ui/HelpWindow.h/.cpp` | 10 步模态引导（v2.4.0 新增「填表接力」页） | 150 |
 | `src/res/app.rc`、`manifest.xml` | 图标、`VERSIONINFO`、DPI/comctl6 | 90 |
-| `tests/*` | 单测：41 例（§9.2/9.3/9.4/9.6；§9.1 的"33 例/Catch2"是步骤 10 前的旧口径，见下方备注） | 706 |
+| `tests/*` | 单测：42 例（§9.2/9.3/9.4/9.6；§9.1 的"33 例/Catch2"是步骤 10 前的旧口径，见下方备注）。**用例数不再写死在源码里**：`Run()` 自增 `g_cases`，末尾一行打印实测值 | 759 |
 
 合计约 **4600 行**（.NET 版约 2000 行），差异集中在 `ui/`。
 
@@ -144,6 +153,8 @@ public:
   void SetFilter(FilterType);  void ApplySearch(std::wstring kw);  // UI 已防抖
   void Select(const ClipItem*);              // 所有模式同步选中（原 SelectItem）
   void   AnchorQuickSelection();             // C14：Quick 下把选中位钉到 display_.front()，普通模式空操作
+  const ClipItem* RelayNext() const;         // C15（v2.3.0）：＝ display_.front()，所见即所贴；它已灰显或显示区空 → nullptr
+  // v2.2.0 的 `RelayArmable()`（【全部】视图 + 空搜索才许武装）已在 v2.3.0 删除：作用域改由 AppContext 裁决。
   std::function<void(const StoreEvent&)> onEvent;
 
   const std::vector<const ClipItem*>& Display() const;
@@ -163,7 +174,7 @@ private:
 
 | 规则 | 实现 | 出处 |
 |---|---|---|
-| 结构不变式 | `items_` = `[收藏区(最新在前) | 非收藏区(最新在前)]`，即下标 `0..Boundary()-1` 为收藏，其后为非收藏 | §4.3 |
+| 结构不变式 | `items_` = `[收藏区(最新在前) \| 非收藏区(最新在前)]`，即下标 `0..Boundary()-1` 为收藏，其后为非收藏 | §4.3 |
 | 插入位 | `insert(begin()+Boundary(), item)`（表格块按阅读顺序整块插入，首格在上） | FR-05 |
 | 沉底 | 非收藏项 → `move` 到 `end()`；**收藏项 → `move` 到收藏区末尾（`begin()+Boundary()-1`）** | FR-10 / **C8 补充** |
 | 淘汰 | 删除**非收藏区末尾**超额项（`erase(end()-excess, end())`） | **C7 末位淘汰** |
@@ -195,13 +206,50 @@ WM_CLIPBOARDUPDATE(0x031D) @Monitor
 
 **粘贴链路**（`DoPaste`，全异步分段、无阻塞）
 ```
-DoPaste(item, moveToEnd):
+DoPaste(item, moveToEnd, targetOverride = nullptr):        // v2.2.0：接力传点中的根窗，普通链为 nullptr
   isInternalPaste = true; lastPasted = item.content
-  PasteService.Start(owner=mainWnd, target=GetPasteTarget(), item.content)
-    stage=Write →  stage=WaitForeground（60ms 定时器）  →  stage=SendKeys（SendInput 4 事件）  →  stage=Idle
+  PasteService.Start(owner=mainWnd, target=targetOverride ? targetOverride : GetPasteTarget(), item.content)
+    stage=Write →  stage=WaitForeground（60ms 定时器）  →  stage=SendKeys（InjectCtrlV：一次 SendInput 投 5 或 6 事件）  →  stage=Idle
+    （v2.3.2 批次＝[按需 Ctrl↑] Ctrl↓ Alt↑ V↓ V↑ Ctrl↑，每事件带 wScan=MapVirtualKeyW(vk,MAPVK_VK_TO_VSC)；
+      Alt↑ 恒排进批次、不按键态判断，Ctrl↑ 在注入那一刻用 GetAsyncKeyState 复查；
+      写盘阶段只保留"用户按着 Ctrl 就补发 Ctrl up"，v2.3.2 已删掉点击那一刻的单独 Alt↑；
+      目标已是前台则跳过夺前台。⚠ 这两版改动都没修好真表格落点，见 doc/PROJECT_STATE.md §4 坑 #20）
   收到 WM_APP_PASTE_DONE：
-    Store.PasteDone(item, moveToEnd)         // 灰显 + 沉底(C8)；沉底后选中位回第一行＝下一条未粘贴(C14)
+    Store.PasteDone(item, moveToEnd)         // 灰显 + 沉底（C8）；沉底后第一行＝下一条未粘贴（C14/C15 共用）
     SetTimer(kPasteGuardMs, ID_PASTE_GUARD)  // 兜底清标志
+```
+
+**接力链路（C15，v2.3.0 无开关）**
+```
+作用域裁决 AppContext::SyncRelayHook()          // 唯一装/卸入口，被下面每一个状态变化点调用
+  want = Store.pasteMode()==Quick && MainWindow.IsVisible() && !ProcessPicker.picking()
+  调用点：Initialize（落盘模式）· ToggleVisibility 收起分支 · ShowAndFocus · 标题栏最小化按钮 ·
+          SavePasteMode（标题栏文字与右键菜单两条切换共用它）· TogglePick 两条路径 ·
+          picker_.onPicked / onCanceled · OnSessionUnlock · OnSessionLock/OnEndSession 直接 Disarm
+  ├─ want 为假 → RelayService::Disarm(原因)（未挂着时静默早退，不刷日志）
+  └─ want 为真 → RelayService::Arm(mainWnd, inst)   // SetWindowsHookExW(WH_MOUSE_LL)
+        ★ 幂等**重装**：已挂着就先 UninstallHook() 再挂——低层钩子被系统按 LowLevelHooksTimeout
+          静默摘掉后没有任何查询 API，症状只是"Alt+点不灵且不报错"，重挂是唯一自愈路径
+        装不上 → LogWarn + 状态栏提示，普通粘贴不受影响
+
+钩子回调 RelayService::LlHook → OnMouse(lParam)     // 运行在装载钩子的 UI 线程，只做两件事
+  ├─ !IsAltDownAsync()            → return 0  放行
+  ├─ kRelayDedupeMs(300ms) 内再触发 → return 0  放行（Alt+双击只算一次）
+  ├─ root = GetAncestor(WindowFromPoint(pt), GA_ROOT)
+  ├─ root 为空 / 是自家窗          → return 0  放行
+  └─ PostMessageW(mainWnd, WM_APP_RELAY_TRIGGER, root) ; return 0   // ★放行，绝不 return 1
+
+主窗 WM_APP_RELAY_TRIGGER → AppContext::OnRelayTrigger(target)
+  └─ RelayStep(target)
+        ├─ target 已失效 / 是自家窗 → LogWarn 后返回，不动列表
+        ├─ item = Store.RelayNext()  // ＝显示区第一行，过滤/搜索态按屏幕所见的算（所见即所贴）
+        │     └─ nullptr（第一行是灰条）→ LogInfo + 状态栏「没有未粘贴的条目，复制新的内容即可继续」
+        │                                  ★ 不卸钩：用户复制一条新的，第一行立刻就是它
+        └─ MainWindow::PasteForRelay(item, target) → DoPaste(item, /*moveToEnd*/true, target)
+
+卸下（没有"结束接力"这个用户动作）
+  切到普通模式 · 收起/最小化主窗 · 点选开始 · 会话锁屏 · 注销/关机 · 退出清理链
+  → RelayService::Disarm(reason)：先 UnhookWindowsHookEx 再清 instance_（顺序不能反，同点选 §7.2）
 ```
 
 ---
@@ -301,8 +349,8 @@ public:
 private:
   bool WriteClipboard(const std::wstring&);                   // GHND → EmptyClipboard → SetClipboardData
   bool BringTargetToFront(HWND target);                       // 三段兜底（pid 由 WindowPid 取）
-  void SendCtrlV();                                           // SendInput 4 事件
-  Stage stage_ = Stage::Idle; HWND owner_ = nullptr, target_ = nullptr; std::wstring pending_;
+  UINT InjectCtrlV();                                         // v2.3.1 引入、v2.3.2 改序：复查 Ctrl → 同批注入 Ctrl↓→Alt↑→V↓→V↑→Ctrl↑（带扫描码），返回事件数
+  Stage stage_ = Stage::Idle; HWND owner_ = nullptr, target_ = nullptr; std::wstring injected_;   // injected_ 供日志自证批次顺序
 };
 ```
 关键分支与降级：
@@ -344,7 +392,15 @@ private:
 - `WM_LBUTTONDBLCLK` → 通知打开主窗；`WM_RBUTTONUP` → `SetForegroundWindow(自身)` 后 `TrackPopupMenuEx(TPM_RETURNCMD)`（**先置前台，否则点菜单外不消失**）→「打开 / 退出」。
 - `RegisterWindowMessageW(L"TaskbarCreated")` 收到即 `NIM_DELETE`+`NIM_ADD` 重挂（Explorer 重启自愈）。
 - `NIM_ADD` 失败 → Warn 继续运行（可 Alt+Tab 回主窗）。
-- 若 `T5` 热键注册失败：`NIM_MODIFY` + `NIF_INFO` 气泡提示快捷键被占用。
+- **`ShowBalloon(title, text)`（v2.2.0 新增，v2.3.0 起暂无调用方）**：拷贝 `nid_` → `uFlags = NIF_INFO` + `szInfoTitle`/`szInfo`（`wcsncpy_s` 截断）
+  + `dwInfoFlags = NIIF_INFO` → `NIM_MODIFY`。**当初存在的理由已经消失**：v2.2.0 接力武装/解除时主窗是隐藏的，状态栏没人看得见；
+  v2.3.0 接力不再藏窗（能看见列表才能贴），所有接力反馈都走 `AppContext::ShowStatusHint()` 的状态栏路径，本方法遂**成为保留但未使用的能力**。
+  保留不删的判据：它是契约 T5「热键注册失败要给用户可见提示」的现成落点（见下条），删掉等于把那条待办重新做一遍。
+  字段名是 `szInfoTitle`（不是 `szTitle`，写错会报 "has no member named"）。**能否弹出已实测通过**（2026-10-05 19:47
+  `cpp/build-mingw/relay-balloon.png`：Win11 把 `NIF_INFO` 转成 toast，正文逐字正确；**标题位乱码是照出的资源缺陷**，见 `doc/PROJECT_STATE.md` §4 坑 #15 —— **v2.3.4 已在资源侧修掉**（`app.rc` 加 `#pragma code_page(65001)`，产物 `FileDescription` 按码点读回＝`超级剪贴板`）；那张图是 v2.3.0 之前拍的，仍留着乱码标题作为缺陷存证，**toast 标题的实机观感尚未重拍验证**）。
+- ~~若 `T5` 热键注册失败：`NIM_MODIFY` + `NIF_INFO` 气泡提示快捷键被占用~~ → **未实现**：`Ctrl+`` 被占用时
+  `MainWindow::RegisterHotkeys()` 只写一行 `LogWarn`（界面无感）。`ShowBalloon` 已具备投递能力，这条只差一个调用点，
+  但属新增行为、不在 v2.3.0 范围，记入 `doc/PROJECT_STATE.md` §6 待办。
 
 ### 5.5 ProcessPicker（点选）
 
@@ -400,6 +456,80 @@ if (GetLastError() == ERROR_ALREADY_EXISTS) { ActivateExisting(); return 0; }
 - **T1**：`Global\` 需要 `SeCreateGlobalPrivilege`，标准用户创建会失败 → 改 `Local\`，语义为"每登录会话单实例"（多用户同时登录各自一份，符合桌面工具预期）。
 - `ActivateExisting`：`EnumWindows` 遍历标题含 `SuperClip` 的可见 top-level → `GetWindowThreadProcessId` → `QueryFullProcessImageNameW` 与 `GetModuleFileNameW` **全路径比对**相同者才算旧实例（消除原 R10"同名标题误激活"）。命中后 `IsIconic→SW_RESTORE` + `SetForegroundWindow`。
 
+### 5.7 RelayService（接力钩子，v2.2.0 引入 / v2.3.0 改无开关 / C15）
+
+```cpp
+class RelayService {
+public:
+  ~RelayService();                        // 析构即 Disarm(L"析构")
+  bool Arm(HWND mainWnd, HINSTANCE);      // 幂等：没挂就挂，已挂着先 UninstallHook() 再重挂（自愈）
+  void Disarm(const wchar_t* reason);     // 卸钩；当前没挂着直接 return（幂等，不刷日志）
+  bool armed() const;
+private:
+  static LRESULT CALLBACK LlHook(int, WPARAM, LPARAM);   // 进程内单例 instance_ 转发
+  LRESULT OnMouse(LPARAM);
+  void UninstallHook();                   // 先 UnhookWindowsHookEx，再清 instance_（反序会在卸钩瞬间丢回调对象）
+  HHOOK hook_ = nullptr; HWND mainWnd_ = nullptr; bool active_ = false;
+  DWORD lastFire_ = 0;                    // kRelayDedupeMs 内的重复按下忽略（Alt+双击只算一次）
+  static RelayService* instance_;
+};
+```
+
+v2.2.0 有而现在**没有**的三样：闲置定时器（`SetTimer(ID_RELAY_IDLE, kRelayIdleMs)` 曾是武装的前置条件）、
+`Touch()`、`Arm()` 里的"建不起定时器就不武装"。无开关之后钩子的收放由外部状态裁决，
+"用完忘了关"这个原始担忧不复存在（收起窗口即卸），所以不留任何自动收口。
+
+**职责边界（本轮重构过两轮，别再改回去）**：`RelayService` 只管**机制**（钩子的装/卸/重挂、Alt 判定、去重、投递），
+所有**策略与用户反馈**（该不该装、取哪条、贴到哪、贴完提示什么）都在 `AppContext`——
+裁决入口是 `AppContext::SyncRelayHook()`，锁屏/注销沿用 `MainWindow` 已有的
+`WM_WTSSESSION_CHANGE`/`WM_ENDSESSION` 分支转给 `AppContext`，服务层不留回调、不留 `OnIdleTimeout` 之类的重复入口。
+曾经把 `onTrigger`/`onAutoDisarm` 与 `OnIdleTimeout`/`OnSessionLock` 塞进服务层，既与头文件内联定义冲突，
+又让"钩子线程 vs 主线程"的边界变糊，已删。
+
+**与 §5.5 点选的三条共用约束 + 一条相反语义**：
+
+| | 点选 §5.5 | 接力 §5.7 |
+|---|---|---|
+| 钩子返回 | `return 1`（吞掉，保护选区） | **`return 0`（放行，目标必须拿到光标）** |
+| `instance_` 转发 / UI 线程内无锁读写状态 / 回调只做"取窗 + `PostMessage`" | 同 | 同 |
+| 卸钩时机 | 命中即卸 | 快速模式 + 主窗在屏期间常驻，`Disarm` 才卸；**点选期间不叠挂**（`SyncRelayHook()` 里 `picker_.picking()` 为真即卸） |
+
+降级与生命周期：钩子装不上 → `Arm()` 返回 false，`SyncRelayHook()` 只在状态栏报"接力装不起来（鼠标钩子不可用），
+空格粘贴不受影响"并 `LogWarn`，普通粘贴链路不受影响；切普通模式 / 收起主窗 / 最小化 / 点选开始 / 锁屏 / 注销 / 退出
+都收敛到 `Disarm`（钩子**绝不能跨会话残留**；解锁 `WTS_SESSION_UNLOCK` 再由 `SyncRelayHook()` 按当前状态装回）。
+`AppContext.h` 里 `relay_` 必须声明在 `picker_` **之后**：析构顺序要求先卸接力钩子、且卸钩时主窗仍有效。
+
+> **实现注（v2.2.0 引入，v2.3.0 修订，2026-10-05）**
+> - `GetAncestor(..., GA_ROOT)` 而非 `GA_ROOTOWNER`：Excel 模态对话框用 ROOTOWNER 会退到主框架窗，键入落到对话框外。
+> - `IsOwnWindow(root)` 按**进程号**比对（`native/Foreground.h:35`），自家四窗（主窗 / monitor / 托盘宿主 / 悬浮气泡）全在里面：
+>   "在自己列表上 Alt+点"一律放行不贴，不会把内容打进自己的搜索框。取不到窗口同样放行，绝不吞。
+
+> - Alt 判定用 `GetAsyncKeyState(VK_MENU) & 0x8000`（异步态）；`GetKeyState` 在 `WM_APP` 处理里读的是上一条按键的遗留状态。
+> - `PostMessageW` 的 `wParam` 直接带 `HWND`：钩子回调不能阻塞，投递后即返回。目标窗在 `RelayStep` 里再 `IsWindow` 校验（可能已关）。
+> - **为什么 `Arm()` 要"每次都重挂"**：低层钩子只有装与卸两个 API，**没有查询接口**。系统按 `LowLevelHooksTimeout`
+>   摘钩、或被别的程序卸掉之后，症状只是"Alt+点不灵且不报错"，用户视角就是"功能又没了"。把重挂在 `Arm()` 里做成幂等，
+>   `SyncRelayHook()` 的每一次调用都顺带自愈一次；代价是收放窗时各有一次 `Unhook`+`SetWindowsHookEx` 的微秒级空窗，
+>   空窗内的 Alt+点只是不接力，点击本身照常送达目标程序（钩子是过滤器，缺席即透传），无副作用。
+> - **v2.2.0 那版的七条判据已于 2026-10-05 19:44–20:02 实机走查**（逐条见 `doc/TESTING.md` §2）；
+>   **v2.3.0 的无开关作用域已于 2026-10-05 21:49–21:58 走查通过**（六条判据逐条见 `doc/TESTING.md` §2 与 §5）。
+>   已证的机制层（钩子放行与取窗、60 ms 落位、兜底热键〔v2.3.0 当时是 `Ctrl+Alt+空格`，v2.3.3 改 `` Alt+` `` 后**该判据需重跑**〕、双击去重）本轮原样复用；被删掉的那几条（藏窗、气泡、闲置 5 min）不再需要证据。
+>   **22:12:30–22:15:55 用户自己在真 WPS 表格上跑本版**，日志补上了脚本拍不到的两块：点选起止的卸下/装回（22:13:57.356 卸 → 22:13:59.007 备 → 继续动作）、
+>   全灰显期间连 10 次触发动作而不卸钩且新条目上位后同一钩子立刻动作。
+>   **⚠ v2.3.1 订正：同一段日志里的"`EXCEL7|工作簿1` 焦点控件上的多轮真表格落点"不成立。** 用户随即报障
+>   「`Alt+左键`，没有起效果，粘贴不到 excel 中」「没反应」「能贴出东西，但是每次都是一样的条目」——那些 `Ctrl+V` **一条都没落进单元格**。
+>   根因是抬 `Alt` 发生在点击那一刻、`Ctrl+V` 由 60 ms 后的定时器注入且旧批次只有 4 个事件（不含 `Alt↑`），真人按住 `Alt` 时目标实收
+>   `Alt+Ctrl+V`（选择性粘贴）→ **日志全绿而表格无变化**；走查压不出它是因为脚本合成的 `Alt` 会自己按时抬起。
+>   v2.3.1 把抬键并进 `Ctrl+V` 的**同一个 `SendInput` 批次**并在注入那刻复查异步键态，详见 `doc/PROJECT_STATE.md` §4 坑 #19。
+>   **⚠ v2.3.2 再订正：v2.3.1 只修好了一半，而 v2.3.2 那一刀失败了。** 真人手验给出的分界是焦点控件类型——
+>   `EXCEL6|`（编辑态）能贴、`EXCEL7|工作簿1`（网格仅选中）贴不进；v2.3.2 据此同时修 keytip 与扫描码两个假设
+>   （批次改 `Ctrl↓→Alt↑`、每事件补 `wScan`、删掉点击那一刻的单独 `Alt↑`），结果**双双证伪且连编辑态也失效**。
+>   同轮那个不涉及 `Alt` 的对照测试（普通空格粘贴在 WPS 网格里「没成功过」）把结论推到更底层：
+>   **注入链在 `EXCEL7` 上从来没成功过**，最大嫌疑是「一次 `SendInput` 投整批」本身（.NET 旧版是 `keybd_event` 四次独立调用）。
+>   用户 2026-10-06 裁定**放弃修改、保持现状（未回退）**，全部证据与下一刀方向见坑 #20 与 `CHANGELOG.md` v2.3.2 段。
+>   仍未证明的：**真表格单元格落点（现已记为未通过、且已裁定不再追）**、重复 `Alt↑` 的副作用、
+>   注销 `WM_ENDSESSION`、`paste_.busy()` 叠贴丢弃、钩子被系统摘除后 `Arm()` 幂等重装的自愈、
+>   **`` Alt+` `` 兜底键真人按下能否触发（v2.3.3 只证到 `RegisterHotKey` 返回 TRUE）**。
+
 ---
 
 ## 6. UI 层设计
@@ -408,7 +538,7 @@ if (GetLastError() == ERROR_ALREADY_EXISTS) { ActivateExisting(); return 0; }
 
 | 消息 | 处理 |
 |---|---|
-| `WM_CREATE` | 存 `this` 到 `GWLP_USERDATA`；建 `EDIT` 子窗（子类化 `EditProc`：占位文字/清除叉号自绘、`EM_SETMARGINS`、回车回投 —— §6.8；`WM_SETFONT`）；建 D2D/DWrite 资源；按 settings 或默认停靠 |
+| `WM_CREATE` | 存 `this` 到 `GWLP_USERDATA`；建 `EDIT` 子窗（子类化 `EditProc`：占位文字/清除叉号自绘、`EM_SETMARGINS`、回车回投 —— §6.7；`WM_SETFONT`）；建 D2D/DWrite 资源；按 settings 或默认停靠；**v2.3.0：此处不装接力钩子**（钩子只由 `AppContext::SyncRelayHook()` 装卸） |
 | `WM_SIZE` | `renderTarget_->Resize`；重排 `EDIT`/按钮几何；`ListRenderer::Rebuild`；`InvalidateRect(NULL)` |
 | `WM_DPICHANGED` | 采纳 `lParam` 建议矩形 `SetWindowPos`；`SetDpi`；重测所有 `TextLayout`；`Proposed` 与 settings 冲突时以 `LPARAM` 为准 |
 | `WM_DISPLAYCHANGE` `WM_WTSSESSION_CHANGE` | 校验窗口是否仍在某显示器内（否则回默认停靠）；锁屏时 `picker.Cancel()` |
@@ -423,13 +553,15 @@ if (GetLastError() == ERROR_ALREADY_EXISTS) { ActivateExisting(); return 0; }
 | `WM_KEYDOWN` | `VK_SPACE`：`mode==Quick && focusOwner==List && Selected()` → `DoPaste(sel,true)` 并 `return 0`；`VK_ESCAPE`：点选中→取消，否则不隐藏（契约未定义关闭行为）；`VK_APPS` → `return DefWindowProcW(...)`，由系统合成 `WM_CONTEXTMENU`（`lParam=-1,-1`）。**`VK_F10` 不放行**（2026-10-04 决议：本窗无菜单栏，单按 F10 进系统菜单模式的后果不可见即不可测，只把实机验过的行为上线）；其余按键一律 `return 0` 吞掉 |
 | `WM_CHAR` | `focusOwner==List` 时吞掉可打印字符（防无关按键音），仅放行 Space/Esc/Enter |
 | `WM_COMMAND` | `EN_CHANGE`（搜索框）→ 重启 300ms 防抖；`EN_KILLFOCUS/EN_SETFOCUS` → 更新 `focusOwner`；自绘按钮命令 ID |
-| `WM_CONTEXTMENU` | `picking()` 中直接吞掉（点选期间不弹菜单）。否则 `ShowMainMenu()`：三项 `TrackPopupMenuEx(TPM_RETURNCMD)`（粘贴模式 / 复制模式 / 使用帮助，动态文案）。`lParam==-1,-1`（键盘 `VK_APPS`）→ 锚点取列表区左上换算成屏幕坐标。搜索框是**真 `EDIT` 子窗**，它在自己区域内直接收到 `WM_CONTEXTMENU` 并走系统默认（原生编辑菜单，实机 15 项），主窗这条分支碰不到它，因此无需 `OriginalSource` 判定 |
+| `WM_CONTEXTMENU` | `picking()` 中直接吞掉（点选期间不弹菜单）。否则 `ShowMainMenu()`：**三项 + 一条分隔线** `TrackPopupMenuEx(TPM_RETURNCMD)`（粘贴模式 / 复制模式 / ─── / 使用帮助，动态文案；v2.2.0 曾插入第 3 项「填表接力」，v2.3.0 随无开关改造删除）。`lParam==-1,-1`（键盘 `VK_APPS`）→ 锚点取列表区左上换算成屏幕坐标。搜索框是**真 `EDIT` 子窗**，它在自己区域内直接收到 `WM_CONTEXTMENU` 并走系统默认（原生编辑菜单，实机 15 项），主窗这条分支碰不到它，因此无需 `OriginalSource` 判定 |
 | `WM_TIMER` | 见 §6.3 分派 |
 | `WM_APP_SEARCH_ENTER` | `EDIT` 子类窗回投：回车把按键归属交回列表（`focusOwner=List`+`SetFocus(主窗)`） |
 | `WM_APP_PASTE_DONE` | `PasteService` 结果回投 → `OnPasteDone(ok)`：`ok` 才 `Store::PasteDone`（灰显/沉底/连贴跳转），随后 `ArmPasteGuard()` 起 1000ms 兜底 |
 | `WM_APP_PICK_DONE` | `LlHook` 回投根窗口句柄 → `ProcessPicker::OnPickMessage()`：进程名解析与绑定态写入都在主线程（步骤 9） |
-| `WM_APP_RAISE_TOPMOST` | C13 兜底（v2.1.1）：`topmost_` 为真但 `WS_EX_TOPMOST` 位不在时补发一次 `SetWindowPos(HWND_TOPMOST, NOMOVE|NOSIZE|NOACTIVATE)`。由 `WM_ACTIVATE` 投递 |
-| `WM_WTSSESSION_CHANGE` | 值 0x02B1；`WM_CREATE` 里 `WTSRegisterSessionNotification(NOTIFY_FOR_THIS_SESSION)` 才收得到。`wParam==WTS_SESSION_LOCK` 且正在点选 → 走同一条 `Cancel()`，光标绝不残留（步骤 9） |
+| `WM_APP_RAISE_TOPMOST` | C13 兜底（v2.1.1）：`topmost_` 为真但 `WS_EX_TOPMOST` 位不在时补发一次 `SetWindowPos(HWND_TOPMOST, NOMOVE\|NOSIZE\|NOACTIVATE)`。由 `WM_ACTIVATE` 投递 |
+| `WM_APP_RELAY_TRIGGER` | **（v2.2.0 引入，v2.3.0 沿用，C15）** `RelayService` 的 LL 钩子投来 `wParam = 被点中的根窗口` → `AppContext::OnRelayTrigger(target)`：`relay_.armed()` 与 `shuttingDown_` 双闸后 `RelayStep(target)`——取 `Store::RelayNext()`（当前视图 `display_.front()`）贴进该窗。**v2.3.0 起这里不再有 `relay_.Touch()`**：闲置定时器已删，卸下钩子的唯一途径是状态裁决（`SyncRelayHook()`）。消息处理全在主线程，钩子回调里绝不碰剪贴板 |
+| `WM_HOTKEY`（`kMsgHotkey` 0x0312） | `wParam==kHotkeyId(1)` → `Ctrl+`` 呼出/收起（**v2.3.0：呼出不再解除接力**，收起/展开本身经由 `ToggleVisibility` 走一次 `SyncRelayHook()`）；`wParam==kHotkeyIdRelay(2)` → `AppContext::OnRelayHotkey(GetForegroundWindow())`（`` Alt+` `` 兜底，v2.3.3 起；此前是 `Ctrl+Alt+空格`。目标＝按键瞬间的前台窗）。两把都在 `RegisterHotkeys()` 里注册，兜底那把先带 `kModNoRepeat` 失败再退回不带；`UnregisterHotkeys()` 按各自的成功标志独立注销 |
+| `WM_WTSSESSION_CHANGE` | 值 0x02B1；`WM_CREATE` 里 `WTSRegisterSessionNotification(NOTIFY_FOR_THIS_SESSION)` 才收得到。`wParam==WTS_SESSION_LOCK`（值 1）→ `picker.Cancel()` + `relay_.Disarm(L"会话锁屏")`，光标与钩子绝不跨会话残留（步骤 9）；**`wParam==WTS_SESSION_UNLOCK`（值 2，v2.3.0 新增）→ `ctx_->OnSessionUnlock()` 重新裁决一次**，主窗仍可见且处于快速模式就把接力钩子装回来 |
 | `WM_ENDSESSION` | 注销/关机：正在点选同样 `Cancel()`，随后 §7.2 清理链 |
 | `WM_ACTIVATE` | 失活且非点选/菜单期间 → 不做处理（`_lastExternalWindow` 在唤起前记录，更可靠）。**激活**（`LOWORD!=WA_INACTIVE`）且 `topmost_` 为真而 `WS_EX_TOPMOST` 位缺失 → `PostMessageW(WM_APP_RAISE_TOPMOST)`：本窗不在前台时系统会丢掉置顶带变更（v2.1.1 实机坐实），而**不能在这条消息里直接改 z-order**（系统处理完 `WM_ACTIVATE` 还会再动一次，同 `PasteTarget.cpp:76` 记过的坑），所以延后一条消息 |
 | `WM_CLOSE` | → `AppContext.Exit()`（标题栏 ✕ 即彻底退出，FR-15③） |
@@ -458,12 +590,14 @@ struct HitResult { HitZone zone; const ClipItem* item = nullptr; size_t displayI
 |---|---|---|---|---|
 | `ID_SEARCH` | MainWindow | 300ms | FR-06 防抖 | `Store.ApplySearch(editText)`；单次性（每次输入 `KillTimer+SetTimer`） |
 | `ID_READ` | Monitor | 25ms | 读取重试 | `TryRead()`，成功或 6 次后 `KillTimer` |
-| `ID_FOCUS_WAIT` | MainWindow | 60ms | 等前台焦点稳定 | `SendCtrlV()` → `onDone` |
+| `ID_FOCUS_WAIT` | MainWindow | 60ms | 等前台焦点稳定 | `InjectCtrlV()`（v2.3.1 引入、v2.3.2 改序：按需 `Ctrl↑` → `Ctrl↓` → `Alt↑`（恒发）→ `V↓` → `V↑` → `Ctrl↑`，同一批 `SendInput`、每事件带扫描码）→ `onDone` |
 | `ID_PASTE_GUARD` | MainWindow | 1000ms | C4 防护兜底 | 清 `isInternalPaste`/`lastPasted` |
 | `ID_PICK` | Picker 宿主 | 8000ms | T2 卡死取消 | `picker.Cancel()` |
 | `ID_STATUS_HINT` | MainWindow | 3000ms | 收藏/取消收藏后条目立刻离开当前视图，提示需要自动消隐 | `AppContext::OnStatusHintTimer()`：清空 `statusHint_` + 重绘 |
 
 `SetTimer` 精度下限约 10–16ms，25ms 档实测可用；不引 `winmm!timeSetEvent`（避免多一个 DLL）。所有定时器 ID 唯一，`WM_TIMER.wParam` 分派。
+**v2.3.0 删掉了 `ID_RELAY_IDLE`**（原 5 min 闲置自动解除）：接力改为状态驱动后，"该不该装钩子"每个状态入口都会重新裁决一次，
+不需要时间兜底这条收口了。表内因此只剩 6 把。
 
 ### 6.4 行测量与布局
 
@@ -526,8 +660,8 @@ enum class FocusOwner { List, SearchEdit };   // EDIT 获焦经 EN_SETFOCUS/EN_K
 | 列表 | 全自绘 | 无 UIA（N1） |
 | 标题栏应用图标 | `ID2D1Bitmap`（GDI 取像素） | v2.1.0；纯装饰、不参与 `HitZone`，模式文字起点因此改为 `kModeLeft = kPad + 18 + 6`，绘制与命中同用一个常量 |
 | 状态栏署名 `by Mr lin` | 自绘文字 + `HitZone::BtnSignature` | v2.1.0 起单击 `ShellExecuteW("open", kProjectUrl)`；矩形按 DWrite 实度量宽，右侧贴 `ClientW()-kPad`。底栏其余区域是 `Status`，命中即吞掉、不改任何状态（见 §6.2） |
-| 主窗右键菜单 | `MainWindow::ShowMainMenu()`：`CreatePopupMenu` 三项（粘贴模式 / 复制模式 / 使用帮助）+ `TrackPopupMenuEx(TPM_RETURNCMD\|TPM_LEFTALIGN\|TPM_TOPALIGN)` | 步骤 11（2026-10-04）。**严格三项**是用户裁定：置顶已有标题栏 ★，清除/复位带确认链、误触代价与开关不对等，不进菜单。项文字按当前状态生成并写明点击后果（"粘贴模式：普通（点此切到快速）"），取消即零改动。与筛选菜单同一套 `SetForegroundWindow` 前置 + `PostMessage(WM_NULL)` 收尾（主窗是 `WS_POPUP` 非激活窗）。复制模式点击后 `SaveCopyMode()` 即落盘（§8.3） |
-| 帮助窗 | 独立无边框 `WS_POPUP`（`WS_EX_TOOLWINDOW\|TOPMOST`、owner=主窗），D2D 绘制 9 步 + 上一步/下一步/关闭按钮 | 入口：右键菜单「使用帮助」。420×300 逻辑px，贴主窗**左侧**（放不下回落右侧/居中，再 `FitRectToDesktop`）。模态用 `EnableWindow(主窗, FALSE)`，**不起嵌套消息循环**；首末位钳住且按钮禁用，重开回 `1 / 9`；`Esc`/关闭 还原主窗并 `SetFocus`。步骤 11 实机已验翻页（鼠标与 `VK_RIGHT`）、钳位、模态、还原；DPI 150%/200% 排版未验 |
+| 主窗右键菜单 | `MainWindow::ShowMainMenu()`：`CreatePopupMenu` **三项 + 一条分隔线**（粘贴模式 / 复制模式 / ─── / 使用帮助）+ `TrackPopupMenuEx(TPM_RETURNCMD\|TPM_LEFTALIGN\|TPM_TOPALIGN)` | 步骤 11（2026-10-04）建三项。**"严格三项"是当时的用户裁定**：置顶已有标题栏 ★，清除/复位带确认链、误触代价与开关不对等，不进菜单。v2.2.0（2026-10-05）曾加第 3 项「填表接力」（理由是"开关型动作要有隐蔽的关闭入口"），**v2.3.0 随无开关改造删除**——接力不再是开关，菜单里再放一项就是一个点了没用的条目。项文字按当前状态生成并写明点击后果（"粘贴模式：普通（点此切到快速）"），取消即零改动。与筛选菜单同一套 `SetForegroundWindow` 前置 + `PostMessage(WM_NULL)` 收尾（主窗是 `WS_POPUP` 非激活窗）。复制模式点击后 `SaveCopyMode()` 即落盘（§8.3）。**走查判据回到"4 行含分隔线"**；v2.2.0 那次的实拍（`cpp/build-mingw/relay-menu-tight.png`，19:47，5 行含接力项）已作废，v2.3.0 需重拍（`doc/TESTING.md` §5 判据 6） |
+| 帮助窗 | 独立无边框 `WS_POPUP`（`WS_EX_TOOLWINDOW\|TOPMOST`、owner=主窗），D2D 绘制 10 步 + 上一步/下一步/关闭按钮 | 入口：右键菜单「使用帮助」。420×300 逻辑px，贴主窗**左侧**（放不下回落右侧/居中，再 `FitRectToDesktop`）。模态用 `EnableWindow(主窗, FALSE)`，**不起嵌套消息循环**；首末位钳住且按钮禁用，重开回 `1 / 9`；`Esc`/关闭 还原主窗并 `SetFocus`。步骤 11 实机已验翻页（鼠标与 `VK_RIGHT`）、钳位、模态、还原；DPI 150%/200% 排版未验 |
 
 ---
 
@@ -550,15 +684,25 @@ wWinMain
 
 ### 7.2 退出清理链（顺序固定，`Exit()` 与崩溃过滤器共用）
 ```
-ProcessPicker.Cancel()（卸钩子 + SPI_SETCURSORS）
-→ UnregisterHotKey
-→ Store 保存（history + settings，失败静默）
-→ ClipboardMonitor.Destroy（RemoveClipboardFormatListener → DestroyWindow）
-→ TrayService.Destroy（NIM_DELETE → DestroyWindow）
-→ MainWindow 资源释放（ComPtr 自动 Release）→ DestroyWindow → PostQuitMessage
-→ ReleaseMutex + CloseHandle(mutex) → CoUninitialize
+shuttingDown_ = true                       // 先置位：其后所有消息回调一律早退
+→ ProcessPicker::Cancel()                  // 卸点选钩子 + SPI_SETCURSORS 复位光标
+→ RelayService::Disarm(L"退出清理")         // 卸接力钩（v2.2.0 引入；v2.3.0 起这是纯状态清理，无武装概念）
+→ KillTimer × 5                            // ID_PICK / ID_PASTE_GUARD / ID_SEARCH / ID_STATUS_HINT / ID_READ(monitor)
+→ ClipboardMonitor.Destroy()               // RemoveClipboardFormatListener → DestroyWindow
+→ TrayService.Destroy()                    // NIM_DELETE → DestroyWindow
+→ Store::SaveToDisk()                      // 失败静默（变更即落盘，这里只是兜底）
+→ MainWindow::SnapshotGeometry + PersistSettings → MainWindow::Destroy()   // 主窗内部注销两把热键
+→ PostQuitMessage → ReleaseMutex/CloseHandle → CoUninitialize
 ```
-`WM_ENDSESSION`（注销/关机）走同一链，避免托盘图标残留与十字光标残留。
+**顺序依据**：两个钩子必须在**主窗销毁之前**卸掉——LL 钩子的回调投给 `mainWnd_`，窗先没了指针就悬空；
+而 `SaveToDisk` 排在监听与托盘销毁之后，因为那两者不再改列表。注销热键在 `MainWindow::Destroy()` 里，
+不是独立一步（`UnregisterHotkeys()` 按 `hotkeyRegistered_` / `relayHotkeyRegistered_` 两个标志各自判断）。
+
+`WM_ENDSESSION`（注销/关机）与 `WM_WTSSESSION_CHANGE`（锁屏）走同一条解除链。
+**接力钩子在这两条会话消息里一律先解除**（v2.2.0 起如此）：LL 钩子跨会话残留会让下一次登录的桌面吞掉鼠标输入。
+**v2.3.0 补上另一半**：`WTS_SESSION_UNLOCK` 到达时走 `AppContext::OnSessionUnlock()` → `SyncRelayHook()` 重新裁决，
+解锁后若主窗仍可见且处于快速模式，Alt+左键自动恢复可用——用户不需要任何额外动作。
+`AppContext.h` 里 `relay_` 声明在 `picker_` 之后，靠析构顺序保证"先卸接力钩、且卸钩时主窗仍有效"。
 
 ---
 
@@ -595,7 +739,7 @@ ProcessPicker.Cancel()（卸钩子 + SPI_SETCURSORS）
 ### 9.1 结构与构建
 `tests/test_main.cpp` 自带极简断言器（`CHECK/CHECK_EQ` + 计数汇总），**不引 Catch2 也不引任何第三方**（守住 §1.1 的零依赖红线）；目标 `sc_tests`（`add_executable(sc_tests ...)`，不链 d2d/dwrite）。被测范围：`core/` 全部纯函数 + `Store`（`StorageService` 以临时目录注入）。`ui/` 不写单测（无头环境不可行）→ §9.5 手测脚本。
 
-> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **41 例 / 222 断言 / 0 失败**。
+> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **42 例 / 228 断言 / 0 失败**（v2.2.0 加 §9.4-17；v2.3.0 把该例从 8 项断言改写成 6 项，见 §9.4-17；最近实跑 2026-10-05 21:26，产物构建于 21:08）。
 
 ### 9.2 TableParser（13 例，对齐原 §12）
 | # | 输入 | 断言 |
@@ -626,7 +770,7 @@ ProcessPicker.Cancel()（卸钩子 + SPI_SETCURSORS）
 | 7 | `ClipItem{TableCell,2,3}` | `L"来自表格：第 2 行 第 3 列"` |
 | 8 | `TableCell` 但 row/col=0 | `L""`（防御） |
 
-### 9.4 Store 不变式（新增 12 例）
+### 9.4 Store 不变式（现 17 例；1–12 是 §11 的规划口径，13–17 随用户决议追加）
 1 重复复制 → 总数不变、位置到新内容位、时间戳更新、`IsFavorite` 迁移。
 2 已有 3 收藏 + 新复制 → 插入下标 == 3。
 3 非收藏 501 → 淘汰**末尾**一项（C7 回归用例，锁死"不删最新"）。
@@ -639,6 +783,18 @@ ProcessPicker.Cancel()（卸钩子 + SPI_SETCURSORS）
 10 `Reset` → 全部 `isPasted=false`，收藏/非收藏各自时间降序（C5）。
 11 搜索 `400` 命中 `L"４００"`（全角折叠）；大小写不敏感命中 `ABC`/`abc`。
 12 过滤 `TableCell` + 关键词组合 → `Display() ⊆ items_` 且顺序一致；结果变化后原选中项若仍可见则保持选中（契约 §4.6 原地同步语义）。
+13 收藏仅在【收藏】视图显示，`全部/文本/表格单元格` 三视图一律剔除（C10，2026-10-04 决议追加）。
+14 来源标注**不上屏但仍参与搜索**（C11）。
+15 `ClearAll()` 只删非收藏区、收藏原序保留并落盘、返回实际删除条数（C12）。
+16 Quick 模式 `AnchorQuickSelection()` 的五种触发（入列 / 切过滤 / 搜索 / `Reset` / 点选绑定后）都把选中位钉到
+   `display_.front()`；普通模式一律不动（C14）。
+17 **接力（C15，v2.2.0 引入 / v2.3.0 改无开关）**：`AddFromClipboard(L"a\tb\tc")` 拆三条后 `RelayNext()` 依次返回 a→b→c；
+   全部贴完返回 `nullptr`（绝不回头重贴）。**v2.3.0 追加两条"所见即所贴"**：`ApplySearch(L"banana")` 后 `RelayNext()`
+   返回匹配区第一行；切到非【全部】过滤视图（清空搜索词后 `SetFilter(Text)`）同样按当前显示区算。
+   v2.2.0 那版共 8 项断言；本轮删掉锁 `RelayArmable()` 准入的断言、补进锁"所见即所贴"的断言，净余 **6 项**
+   （全库总断言 230→228，与 21:26 实跑一致）。
+   **单测只锁"取哪条 / 何时停"**——"该不该装钩子"是 UI 状态裁决（`SyncRelayHook` 读 `Store` 的模式与主窗可见性），
+   钩子、Alt 判定、注入与夺前台链路都不在逻辑层能力范围内，实机判据见 `doc/TESTING.md` §5。
 
 ### 9.5 实机验收脚本（UI/粘贴不可单测部分）
 ```
@@ -650,6 +806,13 @@ AC-5 过滤"表格"后序号连续（1..n），非原集合序号
 AC-6 目标为 Chrome 输入框 / Excel 单元格 / 微信输入框 三类命中
 AC-7 干净 VM（未装 .NET、未装 VC++ 运行库）双击 exe → 常驻托盘、热键可用
 AC-8 防火墙出站规则拦截 SuperClip.exe（TCP/UDP 全禁）+ 运行 30 分钟复制粘贴 100 次 → 无拦截日志
+AC-9 （v2.2.0 引入、v2.3.0 改无开关、v2.3.1 修注入批次）快速模式 + 主窗在屏时 Alt+左键点外部输入框 → 贴当前视图第一行、该条沉底变灰、
+      新复制的条目自动上位继续贴；切回普通模式/收起主窗/锁屏/退出 四种途径下钩子均已卸下
+      ⚠ v2.3.1：抬 Alt/Ctrl 并入 Ctrl+V 的同一个 SendInput 批次（旧写法下真人按住 Alt 时目标收到 Alt+Ctrl+V，贴不进去）；
+      ⚠ v2.3.2：批次改 Ctrl↓→Alt↑ + 每事件补扫描码 + 删掉点击时单独 Alt↑ —— 真人手验**失败**，两个假设双双证伪，
+        且连 v2.3.1 唯一能成功的编辑态（EXCEL6）也失效；对照测试证明**注入链在 WPS 网格（EXCEL7）上从来没成功过**。
+        用户 2026-10-06 裁定放弃修改、保持现状（未回退）。"内容真的落进单元格"这条**记为未通过**，见 doc/PROJECT_STATE.md §4 坑 #20
+      ⚠ v2.3.3：兜底键 Ctrl+Alt+空格 → Alt+`（只改键位，产品逻辑未动）；注册已实测成功，真人按下能否触发未实测
 额外：RDP 会话启动（WARP 路径）、150%/200% DPI、拔副显示器重启、高对比度主题、
       Explorer 被 kill 后托盘自愈、点选中途锁屏（光标不残留）、任务管理器观察 2 小时句柄不增
 ```
@@ -695,6 +858,13 @@ DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（
 - `101 ICON "SuperClip.ico"`（多尺寸 16/24/32/48/256，256 档为 PNG 压缩；托盘按 `SM_CXSMICON`、窗口类按 `SM_CXICON` 向系统要档）。
   **数字 ID 必须与 `Config.h::kIconIdApp`（101）一致**：`TrayService`/`MainWindow` 走 `MAKEINTRESOURCEW(kIconIdApp)` 取图标，ID 对不上只会静默回退系统图标。
 - `VERSIONINFO`：`FILEVERSION`/`PRODUCTVERSION` 与 `Config.h::kVersionText` 同号（`PackageRelease.bat` 出包前用 `findstr` 校验，不一致拒绝打包）；`StringFileInfo`（`080404b0`）填 `ProductName=SuperClip 超级剪贴板`、`FileDescription`、`CompanyName`、`LegalCopyright`，右键属性可见（继承原 csproj 元数据要求）。
+- **`#pragma code_page(65001)` 必须是 `app.rc` 的第一条指令**（v2.3.4 起，修坑 #15）：本文件是**无 BOM 的 UTF-8**，
+  没有这条 pragma 时 windres 与 `rc.exe` 会按**构建机的 ANSI 代码页**逐字节读入再把每个字节宽化成 UTF-16。
+  中文机器（CP936）恰好能把 `超级剪贴板` 的 15 字节配回 5 个汉字、"看起来是对的"；本项目交叉构建走 WSL
+  （locale C/POSIX → CP1252），于是资源里存的是 `è¶…çº§å‰ªè´´æ…`，属性面板/任务管理器的「文件说明」与
+  Win10/11 toast 的标题位（取 `FileDescription`）全部显示成乱码。**判据只能是从产物里按码点读回 `VersionInfo`**，
+  控制台文本会被 cp936 管道骗反。两个工具链都认这条 pragma，所以 A 档一处改动两边同时生效
+  （B 档 `-J utf-8` 只救 mingw、C 档改纯 ASCII 等于删掉中文描述）。
 - manifest：`compatibility` Win7/8/8.1/10 GUID 全列；` dpiAware=true` + `dpiAwareness=PerMonitorV2,system`；`dependent → Microsoft.Windows.Common-Controls version 6.0.0.0`（`EM_SETCUEBANNER` 依赖）。
 - `SetProcessDpiAwarenessContext` 由代码在 `wWinMain` 首行调用（早于任何窗口创建）。
 
@@ -725,11 +895,18 @@ DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（
 | 8 | `PasteService` + `DoPaste` 编排 + 目标捕获 | AC-2/6 三应用实机；1000ms 守护期间复制不重复入列 |
 | 9 | `ProcessPicker`（含 T2） | 点选 Excel 不改变其选区；中途锁屏光标不残留；红/绿状态正确 |
 | 10 | `SettingsService` + 位置/模式恢复 | 重启后位置、模式、置顶、绑定进程名恢复；拔掉副显示器回默认停靠。**2026-10-04 实机结论**：§9.6 四例绿（40 例/214 断言/0 失败）；`Left100/Top120/400×520` 精确还原并原值回写；`Left9000/Top7000` 回默认停靠 `1540,216`；无文件首启＝右停靠+`topmost=True`+普通模式+全部+未绑定，退出时才建默认文件；唯一候选恢复绑定（日志+绿靶心+"已绑定：PasteTarget"）；同名两窗一律不绑（红靶心+状态栏提示）；★ 关→`WS_EX_TOPMOST` 位消失且**立即**落盘→重启仍关→可开回；点模式文字→`PasteMode` 立即落盘。**未验证**：筛选经模态菜单变更后的 `FilterType` 落盘；`SplitSingleColumn` 无 UI 入口 |
-| 11 | `HelpWindow` + 右键菜单 + 气泡 | 9 步引导可翻页；菜单项文案动态显示当前模式。**2026-10-04 实机结论**：三项菜单在鼠标右键与 `VK_APPS`（锚列表区左上）两路都能弹出，4 项含分隔线、文字随状态翻转（"粘贴模式：普通（点此切到快速）"）；选「粘贴模式」`PasteMode` 0→1→0 落盘、选「复制模式」`SplitSingleColumn` false→true 落盘、取消零改动；帮助窗在主窗左侧 12 逻辑px、420×300、`enabled=False` 证明模态、点「下一步」与 `VK_RIGHT` 均可翻页、`1/9` 与 `9/9` 钳住且按钮禁用、重开回 `1/9`、`Esc` 与「关闭」都还原主窗；搜索框内右键仍是原生 `EDIT` 菜单（15 项）；主窗无回归。**未验证**：① 点选期间不弹菜单——代码有分支，但驱动无法在盲态安全右键（会点到别家窗口），未跑；② `Shift+F10` 按决议不实现；③ 帮助窗 150%/200% DPI 排版（挂步骤 6 遗留）；④ `true→false` 的反向落盘未单独复验 |
+| 11 | `HelpWindow` + 右键菜单 + 气泡 | 9 步引导可翻页（**v2.4.0 起 10 步**：新增「填表接力」页）；菜单项文案动态显示当前模式。**2026-10-04 实机结论**：三项菜单在鼠标右键与 `VK_APPS`（锚列表区左上）两路都能弹出，4 项含分隔线、文字随状态翻转（"粘贴模式：普通（点此切到快速）"）；选「粘贴模式」`PasteMode` 0→1→0 落盘、选「复制模式」`SplitSingleColumn` false→true 落盘、取消零改动；帮助窗在主窗左侧 12 逻辑px、420×300、`enabled=False` 证明模态、点「下一步」与 `VK_RIGHT` 均可翻页、`1/9` 与 `9/9` 钳住且按钮禁用、重开回 `1/9`、`Esc` 与「关闭」都还原主窗；搜索框内右键仍是原生 `EDIT` 菜单（15 项）；主窗无回归。**未验证**：① 点选期间不弹菜单——代码有分支，但驱动无法在盲态安全右键（会点到别家窗口），未跑；② `Shift+F10` 按决议不实现；③ 帮助窗 150%/200% DPI 排版（挂步骤 6 遗留）；④ `true→false` 的反向落盘未单独复验。**v2.2.0 变更**：菜单加第 3 项「填表接力」，判据由"4 项含分隔线"改为**"5 项含分隔线"**（粘贴模式 / 复制模式 / 填表接力 / ─── / 使用帮助），本轮**已实拍**（19:47 `VK_APPS` 那一路，见 §6.8 行末与 `doc/TESTING.md` §2 v2.2.0 行）。**v2.3.0 回退**：接力改无开关，该项连同 `HideForRelay()` 一起删除，判据回到**"4 项含分隔线"**（粘贴模式 / 复制模式 / ─── / 使用帮助）；本轮**未实拍**，需随 v2.3.0 走查重拍（`doc/TESTING.md` §5 判据 6） |
 | 12 | 打包脚本 + 干净 VM 验收 | AC-7/8；`dumpbin /dependents` 仅 §附录白名单 DLL |
 | 12 之后 | **v2.1.0**：五项界面修订 + C14 快速模式选中位钉第一行 | 交叉构建 error 0、§9.4 增至 16 例（合计 41 例/222 断言/0 失败）。**2026-10-05 17:01–17:07 实机走查通过**（合成数据、每次点击前 `WindowFromPoint`→`GA_ROOTOWNER` 守卫、`GUARD_FAILS=0`）：图标渲染、图钉两态与 `topmost` True→False→True、✕ 出现/清空、点底栏空白收藏数不变（2→2）、点署名后前台窗标题变 `mylxnet/SuperClip-C`、气泡 `tip_left-win_left=51px` 在行之上；C14 两轮靶窗 dump 各含本轮 token。逐条判据见 `doc/TESTING.md` §2 与 `doc/PROJECT_STATE.md` §6 |
 | 12 之后 | **v2.1.1**：C13 置顶兜底（修"启动即置顶"在真实桌面不生效） | 交叉构建 error 0、41 例/222 断言/0 失败、`FileVersion=2.1.1.0`。实机：修复后连续两次冷启动（含让前台给靶窗那次）`WS_EX_TOPMOST` 位为 1；当时 `WM_ACTIVATE` 兜底分支一次都没被执行过（再没能复现出"丢带"的起始态）→ 标未验证，**同日 17:41 由 v2.1.2 那轮补测通过** |
 | 12 之后 | **v2.1.2**：发布验收资产轮（零产品代码变更） | `ReleaseChecklist.md` 重做成可执行判据单（§2.1 环境自检 / §2.2 十行判据 / §5 发布记录表单 / §6 体积门三档降级），新增 `cpp/qa/ac8_loop.ps1`（AC-8 断网连贴 100 轮驱动，自带 WinForms 靶窗 + 两道防误跑守卫）。全量干净重建 `RC=0`、error 0、自有源 warning 0；单测 41/222/0；产物 3 649 181 B / MD5 `ab5a5ff2…`。**顺带把 v2.1.1 挂着"未验证"的置顶兜底分支实测通过**（见 `doc/PROJECT_STATE.md` §4 坑 #12 ④） |
+| 12 之后 | **v2.2.0**：C15「填表接力」（Alt+左键逐条贴 + `Ctrl+Alt+空格` 兜底） | 新增 `services/RelayService.h/.cpp`（42 + 86 行）、`Store::RelayArmable/RelayNext`、`PasteService` 两处（抬 Alt、目标已前台不夺前台）、`DoPaste` 第三参 `targetOverride`、第二把热键、`ID_RELAY_IDLE` 闲置定时器、`TrayService::ShowBalloon`、菜单第 3 项。交叉构建 `RC=0`、error 0、自有源 warning 0；**单测 42 例 / 230 断言 / 0 失败**（新增 §9.4-17；用例数改为 `Run()` 自增统计）；版本三处同号 `2.2.0`。**2026-10-05 19:44–20:02 实机走查通过**（合成 15 条投喂、每次点击前 `WindowFromPoint`→`GA_ROOT`→按 **PID** 判自家窗，`GUARD_FAILS=0`；产物先正常退出实例才拷进 `cpp/build-mingw/`，size+md5 与 WSL 源逐字节相同，见 `doc/PROJECT_STATE.md` §4 坑 #14）：Alt+左键四次触发四次落位（间隔 52–66 ms，`焦点控件=Edit`、`事件数=4`）、四次贴出内容互异证明沉底→下一条上位、`Ctrl+Alt+空格` 兜底成功、托盘气泡实拍可见且正文逐字正确（**标题乱码是照出的新缺陷**，坑 #15）、四条自动解除里**闲置 300.006 s / 锁屏 / 呼出 / 退出清理**均有日志行（注销 `WM_ENDSESSION` 沿用 N9 仍无法注入）、Alt+双击 60 ms 只产生 1 次触发。**残留六条见 §6 首行**，逐条判据见 `doc/TESTING.md` §2 末行。**⚠ 本轮的交互模型已于同日 20:20 被用户否决**（四道武装门槛让接力在真实使用中常常根本没装上），机制层全部沿用，门槛与开关由 v2.3.0 删除 |
+| 12 之后 | **v2.3.0**：C15 改「无开关接力」（可见性 + 模式驱动，用户裁定 B 档） | **删**：右键菜单「填表接力」项、`HideForRelay()`、武装/解除托盘气泡、`ID_RELAY_IDLE` 闲置定时器与 `Touch()`、`Store::RelayArmable()`（含【全部】视图与空搜索两条准入）、`OnRelayIdle()`/`EndRelay()`/`RelayBlockReason()`/`relayArmed()`。**增**：`AppContext::SyncRelayHook()`（唯一装/卸入口，幂等重装即 LL 钩子的自愈路径）、`OnSessionUnlock()` + `kWtsSessionUnlock`。改：`RelayNext()` 取所见即所贴的 `display_.front()`；全灰显不卸钩只状态栏提示。交叉构建 `RC=0`、error 0、自有源 0 警告；**单测 42 例 / 228 断言 / 0 失败**（21:26 复跑）；版本三处同号 `2.3.0`；依赖仍 10 个 DLL、零网络库。**实机走查已通过**（2026-10-05 21:49–21:58，六条判据逐条时间戳见 `doc/TESTING.md` §2 与本文 §11 本行）：启动即就绪、搜索态贴所见第一行、全灰显不卸钩、收起即卸·呼出即回、切模式即卸·即回、锁屏卸·**解锁自动装回**·兜底热键·双击去重·退出清理，七次点击全过命中守卫零误投。**22:12:30–22:15:55 用户在真 WPS 表格上自用本版**，日志补齐了脚本拍不到的两点：点选起止（22:13:57.356 卸下 → 22:13:58.982 命中绑定 `ET` → 22:13:59.007 就绪 → 继续贴）与全灰显连 10 次触发不卸钩、新条目上位后同一钩子立刻动作。**⚠ 当时记下的"真表格单元格落点（`EXCEL7`/`EXCEL6` 焦点控件）多轮命中"已由 v2.3.1 订正为不成立**——用户随即报障那些粘贴一条都没落进单元格，日志只能证"取了第 1 行、按键投给了那个焦点控件"（坑 #19）。逻辑层与实机之外，只剩「钩子被系统摘除后 `Arm()` 自愈」一条标未验证 |
+| 12 之后 | **v2.3.1**：修接力注入批次（用户报障「`Alt+左键` 粘贴不到 Excel 中」） | **根因**：抬 `Alt`/`Ctrl` 在点击那一刻单独发一批，`Ctrl+V` 由 60 ms 后的 `ID_FOCUS_WAIT` 定时器发、旧批次只有 4 个事件（不含 `Alt↑`）；C15 的手势是"**按住** `Alt` 点"，于是目标实收 `Alt+Ctrl+V`（Excel/WPS＝选择性粘贴）→ **日志全绿而表格毫无变化**。走查压不出它：脚本合成的 `Alt` 由脚本自己按时抬起。**改**：`SendCtrlV(bool releaseCtrl)` 把 `Alt↑`（**恒发**）与按需的 `Ctrl↑` 排进**同一次 `SendInput`**（原子投递，5 或 6 事件）；新增 `PasteService::InjectCtrlV()` 在注入那刻用新增的 `IsCtrlDownAsync()` 复查 `Ctrl`（`WM_TIMER` 不带键盘状态快照）。`Alt↑` 不按键态判断——点击那一刻已单独抬过一次，注入时读到的是我们自己抬起的结果，判断会漏发（详见 `doc/PROJECT_STATE.md` §4 坑 #19）；粘贴日志新增「`同批抬键=`」，`事件数` 恒为 5/6（旧版 4）。改动面＝3 文件（`Keyboard.h`、`PasteService.h/.cpp`）。**已实测**：交叉构建 `RC=0`、error 0 行、自有源 warning 0 行；单测 **42 例 / 228 断言 / 0 失败**；版本三处同号 `2.3.1`，产物 `SuperClip-v231.exe` 的 `VersionInfo.FileVersion` 读回 `2.3.1.0`；字符串探针（新 exe 含 `v2.3.1` 与新日志串 `同批抬键`、旧 exe 均无）证新分支已编入。**未验证（不得宣称通过）**：真人按住 `Alt` 点真表格单元格是否真的落进内容（判据单在 `doc/TESTING.md` §5：内容变了 + 日志 `同批抬键=Alt`、`事件数=5` + 连点 3 格贴出 3 条不同内容）、重复 `Alt↑` 副作用、Excel keytip 是否闪。同时把 DESIGN §5.5/§6.4/AC-9、TESTING §2/§5、PROJECT_STATE §6 里"真表格落点已实证"的结论一并订正，登记为坑 #19。**→ 手验已于同晚 23:25–23:40 执行，结果"半通过"（编辑态 `EXCEL6` 能贴、网格 `EXCEL7` 贴不进），后续见下两行** |
+| 12 之后 | **v2.3.2**：注入批次改 `Ctrl↓→Alt↑` + 补扫描码（**失败，用户裁定保持现状**） | **起点**：v2.3.1 手验的分界现象——`EXCEL7\|工作簿1`（WPS 网格＝单元格仅选中）十一次全不落地，`EXCEL6\|`（编辑框）六次全落地（`IsPasted` 2→22）。**两个互斥假设一起修**：H1 干净 `Alt` 点按让表格进 keytip 菜单态、随后的 `Ctrl+V` 被当菜单加速键吞掉；H2 `wScan=0` 不被网格 accelerator 接受。**改**：批次顺序 `Ctrl↓ → Alt↑ → V↓ → V↑ → Ctrl↑`（`Ctrl` 已按下时抬 `Alt` 是和弦、不构成独立点按）；新增 `ScanOf(vk)=WORD(MapVirtualKeyW(vk,MAPVK_VK_TO_VSC))`，`SendKey()` 与批次 `push()` 都写 `ki.wScan`（**有意偏离**技术方案 §5.2「只送虚拟键码」，已在 `Keyboard.h` 就地订正）；删掉 `PasteService.cpp` 点击那一刻的单独 `Alt↑`；日志值改 ``Ctrl↓→Alt↑(含扫描码)``。改动面＝3 文件（`Keyboard.h`、`PasteService.h/.cpp`）。**构建侧全绿**：error 0、自有源 warning 0、单测 42/228/0、`VersionInfo`=`2.3.2.0`、探针 v232 三项与 v231 相反。**手验失败**：23:52:33–23:53:06 八次触发日志全是 `同批抬键=Ctrl↓→Alt↑(含扫描码)`、`事件数=5`，`EXCEL7`/`EXCEL6` 两态都出现过，用户回「还是没有进去」→ **H1、H2 双双证伪，且比 v2.3.1 退了一步**。**本轮最大的收获是那个对照测试**：完全不涉及 `Alt`（WPS 里选中空单元格 → 快速模式选中一条 → 按空格普通粘贴）用户答「**没成功过**」→ **C++ 版注入链在 `EXCEL7` 上从来没成功过**，与接力/`Alt`/本轮改动都无关；两边权威实现只剩打包方式一个差别（.NET 旧版 `keybd_event` 四次独立调用 vs C++ 一次 `SendInput` 投整批）。**用户 2026-10-06 裁定放弃修改、保持现状，代码原样保留未回退**；下一刀方向（拆多次 `SendInput` + 事件间短延时 + 回退扫描码）与全部证据见 `doc/PROJECT_STATE.md` §4 坑 #20、`CHANGELOG.md` v2.3.2 段。附带订正：`IsPasted` 58→2 不是缺陷，是用户中途按过一次复位（`Store::Reset()` 不写日志） |
+| 12 之后 | **v2.3.3**：接力兜底键 `Ctrl+Alt+空格` → `` Alt+` ``（用户决议，**产品逻辑一行未动**） | **起因**：用户原话「能否修改组合键CTRL+ALT+空格键，ALT+空格键？？」。**没照他最初说的做 `Alt+空格`**：`RegisterHotKey(MOD_ALT, VK_SPACE)` 能注册成功（Windows 只保护 `Win+L` 与 `Ctrl+Alt+Del`），但会把 `Alt+空格`＝「窗口系统菜单」**从所有程序手里静默抢走**且不给任何提示；`Ctrl+空格` 撞输入法中英切换。`` Alt+` `` 与呼出键 `` Ctrl+` `` 同键位、只差修饰键，零冲突（与 `Shift+F10` 当初"后果不可见即不可测所以不做"同一口径）。**改**（7 处机械改动）：`MainWindow.cpp:782` `mods` 由 `MOD_CONTROL\|MOD_ALT` 改 `MOD_ALT`、`:784/:786` 键位 `kVkSpace`→`kVkOem3`、`:789` 日志文案改「``Alt+` 被占用…``」；注释 3 处（`Config.h:115`、`AppContext.h:59`、`MainWindow.h:100`）；**删掉 `Config.h` 的 `kVkSpace`**（失去唯一引用）；版本三处同号 `2.3.3`。`kModNoRepeat` 的"先带它注册、失败退回不带"两级逻辑原样保留。**未动**：注入链、`SyncRelayHook()`、`RelayNext()`、C8 沉底、C14 上位、300 ms 去重、自家窗放行、零网络；**v2.3.2 那两处注入改动原样保留未回退**。**已实测**：error 0、自有源 warning 0、单测 42/228/0；探针 `SuperClip-v233.exe` 含 `v2.3.3`=True、`v2.3.2`=False、``Alt+` 被占用``=True、`Ctrl+Alt+空格 被占用`=False（v232 四项相反）；`VersionInfo.FileVersion`=`2.3.3.0`；换版上机（旧实例 v232 主窗收起、`MainWindowHandle=0`，改用 `EnumWindows` 按类名 `SuperClipMain` 投 `WM_CLOSE` → exited cleanly）新实例 pid 13624、hwnd 1705728、`IsWindowVisible=True`、条目 146 条、绑定 `ET` 与钩子均就绪；**启动日志最后 40 行内 `[W]`/`[E]` 0 行 → 两把 `RegisterHotKey` 都返回 TRUE**。`cpp/build-mingw/SuperClip.exe` 本轮**成功覆盖**为 v2.3.3（MD5 `5334764b…`，与 `SuperClip-v233.exe` 逐字节相同），坑 #14 的镜像锁未再触发。**未验证**：真人按 `` Alt+` `` 能否触发接力（注册成功 ≠ 按键可用）、与第三方抢键、**界面上没有任何地方告知这把键**（帮助窗无接力页，旧账）。驱动器 `cpp/qa/relay.ps1` 的 `-HotkeyRelay` 已由 `CtrlAltSpace()` 改为 `AltOem3()`（纯 ASCII、Parser 0 错），本轮**未跑**该分支 |
+| 12 之后 | **v2.3.4**：修「应用描述乱码」（坑 #15 A 档，**产品逻辑一行未动**） | **起因**：用户原话「修改，应用的描述中出现乱码SuperClip è¶…çº§å‰ªè´´æ」——即属性面板/任务管理器「文件说明」与 Win10/11 toast 标题位读的那个 `FileDescription`。**根因**：`app.rc` 是无 BOM 的 UTF-8，windres/`rc.exe` 在没有 `code_page` 声明时按**构建机 ANSI 代码页**逐字节读入再宽化成 UTF-16；中文机器 CP936 恰好配回汉字所以一直看不出来，本项目交叉构建走 WSL（locale C/POSIX → CP1252），15 个字节就成了 15 个拉丁字符。**改**（4 处）：`app.rc` 顶部（`#include <windows.h>` 之前）加 4 行说明注释 + `#pragma code_page(65001)`；`FILEVERSION`/`PRODUCTVERSION` → `2,3,4,0`、两个 `VERSIONINFO` 字符串同；`Config.h:64` `kVersionText` → `L"v2.3.4"`。**未动**：任何 `.cpp`/`.h` 逻辑、`CMakeLists.txt`、`PackageRelease.bat`、QA 脚本。三档里取 A 是因为 B（`-J utf-8`）只救 mingw、C（纯 ASCII）等于删掉中文描述，A 一行对两条工具链同时生效。**已实测**：`RC=0`、error 0、自有源 warning 0，单独 `windres` 重编 `app.rc` 也 `RC=0`；单测 42/228/0；**决定性判据＝按码点读回 `VersionInfo`**：`FileDescription` 由旧产物 23 字符 `00E8 00B6 2026 …` 变成 15 字符 `8D85 7EA7 526A 8D34 677F`（超级剪贴板），`LegalCopyright` 的 `©` 由 `00C3 00A9` 修成 `00A9`，版本两字段 `2.3.4.0`；探针 `v2.3.4`=True、`v2.3.3`=False、`超级剪贴板`=True、乱码串=False；WSL↔Windows MD5 一致（`d9b6aa09…`），另存 `SuperClip-v234.exe`；**文件体积与 v2.3.3 同为 3,664 469 B，不能拿来判"有没有重编"**——`.text` 同 `0x00100ce0`、`.rsrc` 反而小 32 B（`0x000140f8`→`0x000140d8`），差额被节对齐填充吃掉；导入表仍恰好 10 DLL / 0 网络库，`ExtractAssociatedIcon` 仍取到 32×32 图标。**未验证**：MSVC `rc.exe` 路径（本机无 SDK）、toast 标题位实机观感（`ShowBalloon` 当前无调用方）；**本轮未换版上机**（用户实例仍是 pid 13624 的 v2.3.3，换版要停他的程序、需单独授权） |
+| 12 之后 | **v2.4.0**：使用帮助 9→10 步 + README 重写 + **mingw 件作为发布物**（用户裁定） | **起因**：用户原话「判断是否在win7上正常运行吗？修正应用中的使用帮助，升级版本到2.4，重写readme.md，push代码和产物。项目收官。」Win7 一问只给静态证据（`WINVER=0x0601`、`-static` CRT、Win8+/10+ API 全 `GetProcAddress` 探测两级回退），**真机未跑过，不宣称能跑**；帮助窗对照 `doc/TESTING.md` §5 与审计登记落到三处缺陷。**改**：`HelpWindow.cpp` `kSteps[]` 9→10——新增第 4 步「填表接力」（`Alt`+左键手势、"快速模式 + 窗口在屏"生效条件、`` Alt+` `` 兜底、"WPS/Excel 仅选中单元格贴不进、要先双击进编辑态"已知限制），第 3 步补审计 S3「粘贴会先把这条写进系统剪贴板、原内容被覆盖」，第 7 步补 DESIGN N11「拆分按行优先、空行与空格子会被跳过、逐格贴会与格位错开」；头部注释改写（正文 172 DIP / 13px 约 9 行 / `DrawText` 带 CLIP **写超是静默裁掉**，故每页 ≤7 行、改完必须实机截图逐字核对）；`kStepCount` 由 `sizeof` 自推。**版本四处同号**：`app.rc` `2,4,0,0` ×2 + 两字符串、`Config.h:64` `kVersionText`、**`app.manifest` `assemblyIdentity`（v2.0.3 起漏改，本轮补）**、状态栏随 `kVersionText`。**未动**：任何产品逻辑、`CMakeLists.txt`、注入链、QA 脚本。**已实测**：`RC=0`、error 0、自有源 warning 0；单测 42/228/0（五轮同数）；探针 `v2.4.0`=True、`v2.3.4`=False、`填表接力`=True、``Alt + ` ``=True、`覆盖`=True、乱码串=False，`VersionInfo` 两版本字段 `2.4.0.0`、`FileDescription` 仍 15 字符；**帮助窗 10 页逐页截图逐字核对**（2026-10-06 01:01–01:03，合成数据）：十页 md5 互异、页码 `1 / 10`–`10 / 10`、第 1 页「上一步」与第 10 页「下一步」置灰、三处新增文案逐行可见无裁切；README 四张配图同轮实拍（底栏 `v2.4.0  by Mr lin`）；数据防护两轮（146/9 → 15/2 → 还原 md5 一致，只删本轮 `Temp\sc-v240*`）；**收尾经用户授权换版上机**：旧实例 `WM_CLOSE` 正常退出 → 还原 → v2.4.0 重启 pid 5320、`IsWindowVisible=True`、`Responding=True`、live=146/9。**发布**：`PackageRelease.bat` 的 MSVC 链本机跑不了，用户裁定 Release 附件用 mingw 交叉件（3,664,981 B / MD5 `5245fdba…` / 另存 `SuperClip-v240.exe`），超 3 MB 体积门一事在 README 醒目块 + CHANGELOG + `PROJECT_STATE` §6 三处挂账。**未验证**：MSVC 链、干净 VM AC-8、Win7/8.1 真机（KB2670838 与 `Microsoft YaHei UI` 字体族两道硬门槛）、150%/200% DPI、真人 `` Alt+` ``；悬浮气泡配图补拍两次失败（遮挡 + 半绘制，坑 #22），`readme-tip.png` 裁旧图底栏复用 |
 
 判据纪律：每步完成后只报"已验证项 + 未验证项"，未实机验证的 UI/粘贴行为一律标注**未验证**，不得凭代码推断宣称通过。
 

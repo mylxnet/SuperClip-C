@@ -38,6 +38,15 @@ class Store {
   // C14（2026-10-05 用户决议）：快速模式把选中位钉到显示区第一行（复制/绑定/过滤后无需先点条目，空格即贴最新那条）。
   // 普通模式调用它什么都不做。列表重排末尾会自动调一次；绑定完成那一路由 AppContext 显式调用。
   void AnchorQuickSelection();
+  // C15 填表接力（v2.3.0 起为无开关接力，2026-10-05 用户决议）：接力贴的是**所见即所贴**——
+  // 屏幕上的实时第一行，过滤态/搜索态都按当前显示区算，不要求停在【全部】视图或清空搜索框。
+  // 粘过的会沉底（C8），下一条自动上位（C14），所以不需要额外指针。
+  // 第一行已是灰条 = 没有未粘贴的条目，返回 nullptr 让调用方只提示、绝不回头重贴。
+  const ClipItem* RelayNext() const {
+    if (display_.empty()) return nullptr;
+    const ClipItem* front = display_.front();
+    return front->isPasted ? nullptr : front;
+  }
   void SaveToDisk();                           // 退出链用（变更时已自动保存）
   void SetCopyMode(CopyMode mode) { copyMode_ = mode; }
   void SetPasteMode(PasteMode mode) { pasteMode_ = mode; }

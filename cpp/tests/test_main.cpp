@@ -1,4 +1,4 @@
-// SuperClip C++ · M1 逻辑层单测（技术方案 §9.2/§9.3/§9.4，共 33 例）
+// SuperClip C++ · M1 逻辑层单测（技术方案 §9.2/§9.3/§9.4/§9.6）
 // 自建极简断言框架：原计划用 Catch2，但当前环境离线取不到包 → 内置等价物。
 // 运行前提：Windows（BCrypt / 临时目录）。交叉编译产物需在 Windows 或 Wine 下执行。
 #include "../src/core/ClipItem.h"
@@ -21,6 +21,7 @@ namespace {
 
 int g_failures = 0;
 int g_checks = 0;
+int g_cases = 0;                      // 由 Run 自增：用例数只有一处权威，别在打印里再抄一个数字
 const char* g_current = "";
 
 // 系统时钟粒度约 15.6ms：需要可区分的 createdUtc 时按此间隔隔开两次入列
@@ -61,6 +62,7 @@ using TestFn = void (*)();
 
 void Run(const char* name, TestFn fn) {
   g_current = name;
+  ++g_cases;
   const int before = g_failures;
   fn();
   std::printf("%s %s\n", g_failures == before ? "  ok  " : "  BAD ", name);
@@ -567,8 +569,35 @@ void S16_QuickModeAnchorsSelectionToFirstRow() {          // 2026-10-05 用户�
   CHECK_EQ(store.Selected()->content, L"newest");
 }
 
-// ============ §9.6 Settings（4 例）============
-// settings.json 与 .NET v2.0.2 互换读写的硬要求：键名、键序、null 语义都得逐字节对齐。
+// C15 无开关接力（v2.3.0，2026-10-05 用户决议）：接力永远取**屏幕上的实时第一行**，
+// 过滤态与搜索态都按当前显示区算（所见即所贴），贴完给 nullptr、绝不回头重贴。
+// 钩子那半段（WH_MOUSE_LL）在无输入总线的单测里跑不到，这里只锁推进规则本体。
+void S17_RelayTakesFrontRowAndStopsWhenExhausted() {
+  TempStore tmp("s17");
+  sc::Store store(tmp.storage());
+  store.AddFromClipboard(L"a\tb\tc");                    // 一行三格 = 接力的三条
+  CHECK_EQ(store.Display().size(), size_t(3));
+  CHECK_EQ(store.RelayNext()->content, L"a");           // 第一行 = 行优先的第一格
+  store.PasteDone(store.RelayNext(), true);              // 贴过即沉底，不需要额外指针
+  CHECK_EQ(store.RelayNext()->content, L"b");
+  store.PasteDone(store.RelayNext(), true);
+  store.PasteDone(store.RelayNext(), true);
+  CHECK(store.RelayNext() == nullptr);                   // 第一行是灰条 → 本次不动作
+
+  // v2.2.0 的「必须停在【全部】视图 + 搜索框必须为空」两条准入已删除：
+  // 接力不再要求先改视图，用户看见哪条就贴哪条。
+  TempStore tmp2("s17b");
+  sc::Store st2(tmp2.storage());
+  st2.AddFromClipboard(L"apple");
+  st2.AddFromClipboard(L"banana");                       // 新复制的在第一位
+  st2.ApplySearch(L"banana");
+  CHECK_EQ(st2.RelayNext()->content, L"banana");         // 搜索态：贴匹配区的第一行
+  st2.ApplySearch(L"");
+  st2.SetFilter(sc::FilterType::Text);
+  CHECK_EQ(st2.RelayNext()->content, L"banana");         // 过滤态：同样取过滤后的第一行
+}
+
+// ============ §9.6 Settings（4 例）============// settings.json 与 .NET v2.0.2 互换读写的硬要求：键名、键序、null 语义都得逐字节对齐。
 std::string ReadAllBytes(const std::wstring& path) {
   HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -677,7 +706,7 @@ void G04_OutOfRangeAndWrongTypePerField() {
 }  // namespace
 
 int main() {
-  std::printf("SuperClip C++ 逻辑层单测（41 例）\n");
+  std::printf("SuperClip C++ 逻辑层单测\n");
 
   Run("§9.2-01 单行两列", T01_SingleRowTwoCols);
   Run("§9.2-02 两行两列", T02_TwoRows);
@@ -718,13 +747,14 @@ int main() {
   Run("§9.4-14 来源标注不上屏仍参与搜索", S14_SourceLabelSearchableWhileHidden);
   Run("§9.4-15 清除保留收藏（C12）", S15_ClearAllKeepsFavorites);
   Run("§9.4-16 快速模式选中位钉第一行", S16_QuickModeAnchorsSelectionToFirstRow);
+  Run("§9.4-17 接力取第一行与贴完即止（C15）", S17_RelayTakesFrontRowAndStopsWhenExhausted);
 
   Run("§9.6-01 .NET 文件读入并逐字节写回", G01_DotNetFileReadsAndWritesBackIdentical);
   Run("§9.6-02 全字段往返（含绑定进程名）", G02_RoundTripWithBinding);
   Run("§9.6-03 缺失/损坏回落默认", G03_MissingOrCorruptFallsBackToDefaults);
   Run("§9.6-04 越界与类型不符按字段作废", G04_OutOfRangeAndWrongTypePerField);
 
-  std::printf("\n用例 41，断言 %d 项，失败 %d 项 → %s\n", g_checks, g_failures,
+  std::printf("\n用例 %d，断言 %d 项，失败 %d 项 → %s\n", g_cases, g_checks, g_failures,
               g_failures == 0 ? "全部通过" : "存在失败");
   return g_failures == 0 ? 0 : 1;
 }

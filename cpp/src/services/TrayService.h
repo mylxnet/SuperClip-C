@@ -5,6 +5,7 @@
 #include <shellapi.h>
 #include <cwchar>
 #include <functional>
+#include <string>
 
 namespace sc {
 
@@ -19,6 +20,10 @@ class TrayService {
   bool Create(HINSTANCE inst);
   void Destroy();
   HWND window() const { return win_.get(); }
+  // C15：v2.2.0 为接力武装/解除新增（那时主窗是隐藏的，状态栏看不见，反馈只能走托盘气泡 NIF_INFO）。
+  // v2.3.0 起**没有调用方**——接力全程不藏窗、状态栏一直在眼前；方法保留是 T5「热键被占用要可见提示」的现成落点。
+  // 失败只记日志：气泡弹不出来不影响功能本身。
+  void ShowBalloon(const std::wstring& title, const std::wstring& text);
 
   std::function<void()> onOpen;
   std::function<void()> onExit;

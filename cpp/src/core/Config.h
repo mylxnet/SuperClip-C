@@ -61,7 +61,7 @@ constexpr int kHelpTitleH = 40;                 // 顶部标题带（同时是�
 constexpr int kHelpBtnH = 30, kHelpNavBtnW = 76, kHelpCloseBtnW = 56, kHelpBtnGap = 8;
 
 // 与 src/res/app.rc 的 FILEVERSION 同步（PackageRelease.bat 以 app.rc 为准，并校验本行）
-inline constexpr wchar_t kVersionText[]  = L"v2.1.2";
+inline constexpr wchar_t kVersionText[]  = L"v2.4.0";
 // 署名固定（agent.md 四.3：界面上版本号写在署名之前）
 inline constexpr wchar_t kAppSignature[] = L"by Mr lin";
 // 点击署名交给**系统默认浏览器**打开的仓库地址。程序自身仍零网络代码：不链 wininet/winhttp、
@@ -98,6 +98,7 @@ constexpr UINT WM_APP_PASTE_DONE = WM_APP + 3;   // M4
 constexpr UINT WM_APP_PICK_DONE  = WM_APP + 4;   // M4
 constexpr UINT WM_APP_SEARCH_ENTER = WM_APP + 5;  // 搜索框回车 → 焦点交回列表（§6.7）
 constexpr UINT WM_APP_RAISE_TOPMOST = WM_APP + 6; // 0x8006 激活后补发置顶（C13，见 MainWindow WM_ACTIVATE）
+constexpr UINT WM_APP_RELAY_TRIGGER = WM_APP + 7; // 0x8007 接力钩子投来的目标根窗（C15）
 
 // 定时器 ID（WM_TIMER.wParam 分派，全进程唯一）
 constexpr UINT_PTR ID_SEARCH      = 1;
@@ -108,8 +109,10 @@ constexpr UINT_PTR ID_PICK        = 5;
 constexpr UINT_PTR ID_HOVER_TIP   = 6;       // 悬停延迟后浮现全文气泡
 constexpr UINT_PTR ID_STATUS_HINT = 7;       // 收藏视图切换提示的自动消隐
 constexpr UINT     kStatusHintMs  = 3000;
+constexpr UINT     kRelayDedupeMs = 300;     // C15：Alt+双击的两次按下只算一次接力
 
 constexpr int kHotkeyId = 1;                     // FR-16
+constexpr int kHotkeyIdRelay = 2;                // C15 兜底触发键（Alt+`，v2.3.3 起）
 
 // SetSystemCursor 的标准光标索引：SDK 写作 OCR_NORMAL = MAKEINTRESOURCE(32512)，而该函数第二
 // 参是 DWORD，故直接取序号 32512（= IDC_ARROW）。mingw-w64 的 winuser.h 未导出 OCR_* 宏。
@@ -125,6 +128,8 @@ constexpr UINT kMsgClipboardUpdate = 0x031D;     // WM_CLIPBOARDUPDATE
 constexpr UINT kMsgHotkey          = 0x0312;     // WM_HOTKEY
 constexpr UINT kMsgWtsSessionChange = 0x02B1;    // WM_WTSSESSION_CHANGE（需 WTSRegisterSessionNotification）
 constexpr WPARAM kWtsSessionLock   = 1;          // WTS_SESSION_LOCK：点选期间锁屏必须复位光标
+constexpr WPARAM kWtsSessionUnlock = 2;          // WTS_SESSION_UNLOCK：接力钩子按当前状态装回来
 constexpr UINT   kVkOem3           = 0xC0;       // ` ~ 键
+constexpr UINT   kModNoRepeat      = 0x4000;     // MOD_NOREPEAT：按住不放不连发（旧 SDK 未导出，固定值兜底）
 
 }  // namespace sc

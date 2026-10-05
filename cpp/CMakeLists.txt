@@ -38,6 +38,7 @@ set(SC_APP_SOURCES
   src/services/TrayService.cpp
   src/services/PasteService.cpp
   src/services/ProcessPicker.cpp
+  src/services/RelayService.cpp
   src/ui/Theme.cpp
   src/ui/ListRenderer.cpp
   src/ui/HoverTip.cpp

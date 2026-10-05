@@ -1,3 +1,9 @@
+// 编码声明必须是文件第一条指令：本文件是无 BOM 的 UTF-8，而 windres 与 rc.exe 默认按
+// 本机 ANSI 代码页（简体中文机器＝CP936，英文机器＝CP1252）逐字节读入再宽化成 UTF-16，
+// 于是 "超级剪贴板" 会存成 "è¶…çº§å‰ªè´´æ…"（属性面板/任务管理器的「文件说明」、
+// 以及 Win10/11 把托盘气泡转成 toast 时的标题位都取这个字段）。两个工具链都认这条 pragma。
+#pragma code_page(65001)
+
 #include <windows.h>
 
 // SuperClip 资源（技术方案 §10.2）
@@ -11,8 +17,8 @@
 // 版本号写死为字面量：windres/RC.exe 对 FILEVERSION 的宏展开行为不一致，
 // 且 PackageRelease.bat 以正则抓取 FILEVERSION 行作为发版来源。
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,1,2,0
- PRODUCTVERSION 2,1,2,0
+ FILEVERSION 2,4,0,0
+ PRODUCTVERSION 2,4,0,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -25,12 +31,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName",  "SuperClip"
       VALUE "FileDescription", "SuperClip 超级剪贴板"
-      VALUE "FileVersion",  "2.1.2.0"
+      VALUE "FileVersion",  "2.4.0.0"
       VALUE "InternalName", "SuperClip"
       VALUE "LegalCopyright", "Copyright © SuperClip"
       VALUE "OriginalFilename", "SuperClip.exe"
       VALUE "ProductName",  "SuperClip 超级剪贴板"
-      VALUE "ProductVersion", "2.1.2.0"
+      VALUE "ProductVersion", "2.4.0.0"
     END
   END
   BLOCK "VarFileInfo"

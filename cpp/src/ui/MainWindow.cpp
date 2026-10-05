@@ -527,6 +527,7 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       switch (hit.zone) {
         case HitZone::BtnMinimize:
           ShowWindow(hwnd, SW_HIDE);                    // FR-15①：收起，监听继续
+          if (ctx_) ctx_->SyncRelayHook();              // C15：窗一收，接力作用域即不成立
           break;
         case HitZone::BtnTopmost:
           SetTopmost(hwnd, !topmost_);                  // FR-15②
@@ -666,14 +667,22 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_APP_PICK_DONE:
       if (ctx_) ctx_->OnPickMessage(reinterpret_cast<HWND>(wParam));   // §5.5：钩子投来的根窗口
       return 0;
+    case WM_APP_RELAY_TRIGGER:
+      // C15：接力钩子投来的根窗口。钩子本身只投递，剪贴板与按键全在这条主线程消息里做。
+      if (ctx_) ctx_->OnRelayTrigger(reinterpret_cast<HWND>(wParam));
+      return 0;
     case kMsgWtsSessionChange:
       if (wParam == kWtsSessionLock && ctx_) ctx_->OnSessionLock();    // 锁屏：光标绝不残留
+      else if (wParam == kWtsSessionUnlock && ctx_) ctx_->OnSessionUnlock();
       return 0;
     case WM_ENDSESSION:
       if (wParam && ctx_) ctx_->OnEndSession();                        // 注销/关机：同一取消链
       return 0;
     case kMsgHotkey:
+      // 兜底触发键的 target 必须在这里当场取前台窗：稍晚一步主窗就可能自己上来了。
       if (wParam == DWORD(kHotkeyId) && ctx_) ctx_->ToggleMainWindow();
+      else if (wParam == DWORD(kHotkeyIdRelay) && ctx_)
+        ctx_->OnRelayHotkey(GetForegroundWindow());
       return 0;
     case WM_CLOSE:
       if (ctx_) ctx_->Exit();
@@ -763,12 +772,32 @@ void MainWindow::RegisterHotkeys(HWND hwnd) {
   if (hotkeyRegistered_) return;
   hotkeyRegistered_ = RegisterHotKey(hwnd, kHotkeyId, MOD_CONTROL, kVkOem3) != FALSE;
   if (!hotkeyRegistered_) LogWarn(L"ui", L"Ctrl+` 热键被占用，呼出不可用（可点击托盘）");
+  // C15 兜底触发键：接力主路径是 Alt+左键（钩子），这把热键留给"钩子装不上"或
+  // "该程序的 Alt+左键有自己的动作"的场合。MOD_NOREPEAT 防按住连发——按住不放能贴走十几条。
+  // Win7 不支持 MOD_NOREPEAT（MSDN），注册失败就退回不带它：宁可能连发，也不要整条功能没。
+  // v2.3.3：键位由 Ctrl+Alt+空格 改成 Alt+`（用户 2026-10-05 决议）。空格那把要占
+  // MOD_CONTROL|MOD_ALT 两个修饰键、按着别扭；Alt+空格虽然是单修饰键但它是 Windows 全局
+  // 「窗口系统菜单」键，RegisterHotKey 会把它从所有程序手里静默抢走，代价不对等。
+  // Alt+` 与呼出键 Ctrl+` 同键位、只差修饰键，不冲突任何系统或输入法快捷键。
+  const UINT mods = MOD_ALT;
+  relayHotkeyRegistered_ =
+      RegisterHotKey(hwnd, kHotkeyIdRelay, mods | kModNoRepeat, kVkOem3) != FALSE;
+  if (!relayHotkeyRegistered_) {
+    relayHotkeyRegistered_ = RegisterHotKey(hwnd, kHotkeyIdRelay, mods, kVkOem3) != FALSE;
+    if (relayHotkeyRegistered_) LogWarn(L"ui", L"MOD_NOREPEAT 不被接受（Win7？），兜底键允许连发");
+  }
+  if (!relayHotkeyRegistered_) LogWarn(L"ui", L"Alt+` 被占用，接力只能用 Alt+左键");
 }
 
 void MainWindow::UnregisterHotkeys(HWND hwnd) {
-  if (!hotkeyRegistered_) return;
-  UnregisterHotKey(hwnd, kHotkeyId);
-  hotkeyRegistered_ = false;
+  if (hotkeyRegistered_) {
+    UnregisterHotKey(hwnd, kHotkeyId);
+    hotkeyRegistered_ = false;
+  }
+  if (relayHotkeyRegistered_) {                        // 两把独立注册，也就独立注销
+    UnregisterHotKey(hwnd, kHotkeyIdRelay);
+    relayHotkeyRegistered_ = false;
+  }
 }
 
 void MainWindow::DockToWorkArea(HWND hwnd) {
@@ -1237,7 +1266,8 @@ void MainWindow::TogglePasteMode() {
 }
 
 // FR-09/10/11：粘贴链路入口。全异步——Start 立即返回，结果经 WM_APP_PASTE_DONE 回来。
-void MainWindow::DoPaste(const ClipItem* item, bool moveToEnd) {
+// targetOverride 只给 C15 接力用：那一下的目标由触发点决定，不走绑定与唤起前窗口。
+void MainWindow::DoPaste(const ClipItem* item, bool moveToEnd, HWND targetOverride) {
   if (!ctx_ || !hwnd_ || !item) return;
   if (paste_.busy()) return;                       // 上一次未完成：静默丢弃，不叠阶段机
   const std::wstring content = item->content;      // 原样粘贴：不折叠、不 trim、不补换行
@@ -1247,7 +1277,12 @@ void MainWindow::DoPaste(const ClipItem* item, bool moveToEnd) {
   paste_.onDone = [this](bool ok) {
     if (hwnd_) PostMessageW(hwnd_, WM_APP_PASTE_DONE, ok ? WPARAM(1) : WPARAM(0), 0);
   };
-  paste_.Start(hwnd_, ctx_->PasteTarget(), content);
+  paste_.Start(hwnd_, targetOverride ? targetOverride : ctx_->PasteTarget(), content);
+}
+
+// C15：接力永远 moveToEnd=true —— 沉底是让下一条上位的那一步，与普通模式双击（原位）不同。
+void MainWindow::PasteForRelay(const ClipItem* item, HWND target) {
+  DoPaste(item, true, target);
 }
 
 void MainWindow::OnPasteDone(bool ok) {
@@ -1266,8 +1301,9 @@ void MainWindow::ToggleVisibility() {
   tip_.Hide();
   if (IsVisible()) {
     ShowWindow(hwnd_, SW_HIDE);                        // 收起后监听与托盘继续工作（FR-01/15）
+    if (ctx_) ctx_->SyncRelayHook();                   // C15：看不见列表 = 接力不成立
   } else {
-    ShowAndFocus();
+    ShowAndFocus();                                    // 内部已同步接力
   }
 }
 
@@ -1279,6 +1315,7 @@ void MainWindow::ShowAndFocus() {
   UpdateWindow(hwnd_);
   SetFocus(hwnd_);                                     // 焦点归列表（§6.7）
   focus_ = FocusOwner::List;
+  if (ctx_) ctx_->SyncRelayHook();                     // C15：列表回到屏上，接力按模式重新裁决
 }
 
 bool MainWindow::IsVisible() const {

@@ -48,6 +48,19 @@ void TrayService::Destroy() {
   win_.Destroy();
 }
 
+void TrayService::ShowBalloon(const std::wstring& title, const std::wstring& text) {
+  if (!added_) {
+    LogWarn(L"tray", L"托盘未挂上，接力提示无法气泡显示");
+    return;
+  }
+  NOTIFYICONDATAW info = nid_;
+  info.uFlags = NIF_INFO;
+  wcsncpy_s(info.szInfoTitle, title.c_str(), _TRUNCATE);
+  wcsncpy_s(info.szInfo, text.c_str(), _TRUNCATE);
+  info.dwInfoFlags = NIIF_INFO;
+  if (!Shell_NotifyIconW(NIM_MODIFY, &info)) LogWarn(L"tray", L"气泡显示失败（功能不受影响）");
+}
+
 void TrayService::HandleTrayClick(HWND hwnd, LPARAM lParam) {
   const UINT event = LOWORD(lParam);
   if (event == WM_LBUTTONDBLCLK) {

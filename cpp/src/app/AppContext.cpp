@@ -32,6 +32,7 @@ bool AppContext::Initialize() {
   // 落盘的快速模式在 UI 就绪后补一次「选中位钉第一行」（C14，规则本体在 Store::AnchorQuickSelection）
   store_->AnchorQuickSelection();
   RestoreBinding();
+  SyncRelayHook();                             // C15：落盘的快速模式 + 主窗已在屏 → 接力当场可用
 
   monitor_.onText = [this](std::wstring text) { OnClipboardText(std::move(text)); };
   monitor_.isInternalPaste = [this]() { return IsInternalPaste(); };
@@ -92,6 +93,7 @@ void AppContext::SaveTopmost(bool on) {
 void AppContext::SavePasteMode(PasteMode mode) {
   settings_.pasteMode = static_cast<int>(mode);
   PersistSettings();
+  SyncRelayHook();   // C15：模式是接力作用域的一半，标题栏与右键两条切换路径都经这里
 }
 
 void AppContext::SaveFilterType(FilterType filter) {
@@ -189,6 +191,7 @@ void AppContext::TogglePick() {
   }
   statusHint_.clear();
   if (picker_.Start(window_->get(), inst_)) {
+    SyncRelayHook();                             // 点选期间只留一个 LL 钩子：接力的先卸下
     RefreshUi();                                 // 主窗已被 Start 隐藏，重画在 EndPick 恢复后生效
     return;
   }
@@ -200,6 +203,7 @@ void AppContext::TogglePick() {
   PersistSettings();
   statusHint_ = L"点选不可用，已绑定上次窗口";
   LogWarn(L"pick", L"降级绑定：" + (boundProcessName_.empty() ? L"<无>" : boundProcessName_));
+  SyncRelayHook();                              // Start 内部已把主窗恢复显示，接力跟着回来
   RefreshUi();
 }
 
@@ -222,8 +226,63 @@ void AppContext::CancelPick() { picker_.Cancel(); }
 
 void AppContext::OnPickMessage(HWND target) { picker_.OnPickMessage(target); }
 void AppContext::OnPickTimeout() { picker_.OnTimeout(); }
-void AppContext::OnSessionLock() { picker_.OnSessionLock(); }
-void AppContext::OnEndSession() { picker_.OnEndSession(); }
+void AppContext::OnSessionLock() {
+  picker_.OnSessionLock();
+  // 钩子绝不跨会话残留：锁屏一律卸，解锁再由 SyncRelayHook 按当前模式与可见性装回来。
+  relay_.Disarm(L"会话锁屏");
+}
+void AppContext::OnSessionUnlock() { SyncRelayHook(); }
+void AppContext::OnEndSession() {
+  picker_.OnEndSession();
+  relay_.Disarm(L"注销/关机");
+}
+
+// ============ C15 无开关接力（v2.3.0，2026-10-05 用户决议）============
+// 接力不再有"开启/关闭"这一步：能看见列表（主窗在屏 + 快速模式）就能 Alt+左键贴第一行。
+// 因此装/卸是状态裁决而非用户动作——每个能改变这两个条件的入口都必须回来同步一次。
+// 点选期间让位：ProcessPicker 自己挂着一个 WH_MOUSE_LL，两个钩子叠挂没有意义。
+void AppContext::SyncRelayHook() {
+  if (!window_ || shuttingDown_ || !store_) return;
+  const bool want = store_->pasteMode() == PasteMode::Quick && window_->IsVisible() &&
+                    !picker_.picking();
+  if (!want) {
+    relay_.Disarm(L"快速模式关闭、主窗已收起或点选进行中");
+    return;
+  }
+  if (!relay_.Arm(window_->get(), inst_)) {
+    LogWarn(L"relay", L"武装失败，Alt+左键不可用");
+    ShowStatusHint(L"接力装不起来（鼠标钩子不可用），空格粘贴不受影响");
+  }
+}
+
+void AppContext::OnRelayTrigger(HWND target) {
+  if (!relay_.armed() || shuttingDown_) return;   // 迟到的投递（已解除）一律忽略
+  RelayStep(target);
+}
+
+void AppContext::OnRelayHotkey(HWND foreground) {
+  if (!relay_.armed() || shuttingDown_) return;
+  RelayStep(foreground);
+}
+
+void AppContext::RelayStep(HWND target) {
+  if (!window_ || !store_) return;
+  if (!target || !IsWindow(target) || IsOwnWindow(target)) {
+    LogWarn(L"relay", L"目标无效或就是本进程窗口，本次不动作：" + DescribeWindow(target));
+    return;
+  }
+  const ClipItem* item = store_->RelayNext();
+  if (!item) {
+    // v2.3.0：贴完不卸钩、不算失败——用户随时复制一条新的回来，第一条永远是新的那条。
+    LogInfo(L"relay", L"第一行已是灰条（没有未粘贴的条目），本次不动作：" + DescribeWindow(target));
+    ShowStatusHint(L"没有未粘贴的条目，复制新的内容即可继续");
+    return;
+  }
+  const auto idx = store_->IndexOfDisplay(item);
+  LogInfo(L"relay", L"贴第 " + std::to_wstring(idx ? long(*idx) + 1 : 0) + L" 条 → " +
+                       DescribeWindow(target));
+  window_->PasteForRelay(item, target);
+}
 
 void AppContext::WirePicker() {
   picker_.onPicked = [this](HWND bound, std::wstring name) {
@@ -237,9 +296,13 @@ void AppContext::WirePicker() {
     // 用户 2026-10-05 决议：绑完目标就该能直接空格连贴——快速模式下把选中位钉回第一行。
     // 粘贴去向仍走现有链（绑定进程 → 该进程窗口；未绑定 → 呼出前那个窗口），契约未动。
     store_->AnchorQuickSelection();
+    SyncRelayHook();        // 点选结束、主窗已由 Cleanup 恢复显示 → 接力重新裁决
     RefreshUi();
   };
-  picker_.onCanceled = [this]() { RefreshUi(); };
+  picker_.onCanceled = [this]() {
+    SyncRelayHook();        // 六条取消路径都从这里回来，只在这一处补裁决
+    RefreshUi();
+  };
 }
 
 void AppContext::RefreshUi() {
@@ -256,6 +319,7 @@ void AppContext::Shutdown() {
   shuttingDown_ = true;                               // 先置位：后续消息回调一律早退
 
   picker_.Cancel();                                   // §7.2 ①：卸钩子 + SPI_SETCURSORS
+  relay_.Disarm(L"退出清理");                          // C15：接力钩子同样必须在主窗销毁前卸掉
   KillTimer(window_ ? window_->get() : nullptr, ID_PICK);
   KillTimer(window_ ? window_->get() : nullptr, ID_PASTE_GUARD);
   KillTimer(window_ ? window_->get() : nullptr, ID_SEARCH);

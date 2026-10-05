@@ -3,6 +3,7 @@
 #include "../core/Store.h"
 #include "../services/ClipboardMonitor.h"
 #include "../services/ProcessPicker.h"
+#include "../services/RelayService.h"
 #include "../services/StorageService.h"
 #include "../services/TrayService.h"
 #include "../ui/MainWindow.h"
@@ -49,6 +50,14 @@ class AppContext {
   void OnEndSession();                     // WM_ENDSESSION
   bool bound() const;                      // 绑定窗仍在世才算"已绑定"（R5）
   const std::wstring& boundProcessName() const { return boundProcessName_; }
+
+  // C15 无开关接力（v2.3.0，2026-10-05 用户决议）：没有"开启/关闭"这一步，也没有菜单项。
+  // 主窗在屏 + 快速模式 = 接力可用；两者任一不成立 = 钩子卸下。每个能改变这两个条件的
+  // 入口都必须调 SyncRelayHook()（收放窗、切粘贴模式、点选起止、会话锁屏/解锁、退出）。
+  void SyncRelayHook();              // 幂等裁决：该装就装（并自愈式重挂），该卸就卸
+  void OnRelayTrigger(HWND target);  // WM_APP_RELAY_TRIGGER：钩子投来的根窗口
+  void OnRelayHotkey(HWND foreground);  // 兜底热键 Alt+`：目标 = 按键瞬间的前台窗
+  void OnSessionUnlock();            // WM_WTSSESSION_CHANGE / WTS_SESSION_UNLOCK
   const std::wstring& statusHint() const { return statusHint_; }   // 非空优先显示（降级/收藏提示）
   void ShowStatusHint(std::wstring text);  // 临时提示，kStatusHintMs 后自动消隐
   void OnStatusHintTimer();
@@ -73,6 +82,7 @@ class AppContext {
   void ApplySettingsToStore();          // 复制模式/粘贴模式/过滤：读盘 → Store 初值
   void RestoreBinding();                // 按进程名找回绑定窗口（同名多窗口不自动绑）
   void PersistSettings();               // settings.json 写盘（失败静默，内存态仍可用）
+  void RelayStep(HWND target);          // 两条触发（钩子/热键）共用的推进动作：贴屏幕第一行
 
   HINSTANCE inst_;
   StorageService storage_;
@@ -82,7 +92,8 @@ class AppContext {
   ClipboardMonitor monitor_;
   TrayService tray_;
   std::unique_ptr<MainWindow> window_;
-  ProcessPicker picker_;                // 放最后：析构时主窗仍有效，卸钩子/复位光标安全
+  ProcessPicker picker_;                // 与下面两个钩子服务都声明在 window_ 之后：析构时主窗仍有效
+  RelayService relay_;                  // 同上，且必须在 picker_ 之后声明（先卸接力钩子）
 
   HWND lastExternalWindow_ = nullptr;
   HWND boundWindow_ = nullptr;          // 只有点选成功才会赋值

@@ -24,11 +24,13 @@ class PasteService {
  private:
   bool WriteClipboard(const std::wstring& text);
   bool BringTargetToFront(HWND target);
+  UINT InjectCtrlV();   // 同批注入 Ctrl↓→Alt↑→V↓→V↑→Ctrl↑，返回 SendInput 事件数
   void Finish(bool ok);
 
   Stage stage_ = Stage::Idle;
   HWND owner_ = nullptr;
   HWND target_ = nullptr;
+  std::wstring injected_;   // 本次批次顺序，供日志自证 Alt↑ 排在 Ctrl↓ 之后
 };
 
 }  // namespace sc

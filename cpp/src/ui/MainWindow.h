@@ -47,6 +47,9 @@ class MainWindow {
   void ToggleVisibility();
   void ShowAndFocus();
   bool IsVisible() const;
+  // C15：接力那一下的目标由触发点决定（钩子的根窗 / 热键瞬间的前台窗），
+  // 不走绑定与"唤起前那个窗口"——主窗全程没出过屏，那套目标推断在这里不成立。
+  void PasteForRelay(const ClipItem* item, HWND target);
   void OnStoreChanged(const StoreEvent& event);
   void Repaint() { if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE); }   // 绑定态变化后刷新靶心/状态栏
 
@@ -76,7 +79,7 @@ class MainWindow {
   void ShowFilterMenu(HWND hwnd);                // FR-07：自绘按钮 + TrackPopupMenuEx 四项
   void ShowMainMenu(HWND hwnd, POINT ptScreen);  // 步骤 11：右键菜单，模式项文案随当前值变
   void TogglePasteMode();                        // §5.3：点击标题栏模式文字切换
-  void DoPaste(const ClipItem* item, bool moveToEnd);   // FR-09/10/11：粘贴链路入口
+  void DoPaste(const ClipItem* item, bool moveToEnd, HWND targetOverride = nullptr);   // FR-09/10/11：粘贴链路入口
   void OnPasteDone(bool ok);                      // WM_APP_PASTE_DONE：成功才置灰
   const wchar_t* FilterLabel() const;            // 工具栏首按钮显示当前过滤值
   HitResult HitTest(POINT ptClient) const;
@@ -94,6 +97,7 @@ class MainWindow {
   AppContext* ctx_ = nullptr;
   UINT dpi_ = 96;
   bool hotkeyRegistered_ = false;
+  bool relayHotkeyRegistered_ = false;   // C15 兜底触发键 Alt+`，与呼出键独立注册
 
   Com<ID2D1Factory> d2dFactory_;
   Com<IDWriteFactory> writeFactory_;

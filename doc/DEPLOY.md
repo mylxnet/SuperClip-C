@@ -1,6 +1,6 @@
 # SuperClip（C++ 版）部署与运维
 
-> 对应产品 **v2.0.3**。本文只写"已经在代码或实机上证实过"的行为；凡未跑过的判据一律标 **未验证**，
+> 对应产品 **v2.4.0**（部署面自 v2.0.3 以来只变过三处：接力兜底热键的键位，见 §5；exe 的「文件说明」由乱码修回中文，见 §7；**v2.4.0 起 GitHub Release 的附件是 mingw 交叉构建件**（本机无 MSVC/SDK，用户裁定，超 3 MB 体积门，见 §1 与 `CHANGELOG.md` v2.4.0 段）。帮助窗 9→10 步属界面文案，不改变部署面）。本文只写"已经在代码或实机上证实过"的行为；凡未跑过的判据一律标 **未验证**，
 > 并与已验证项分开列。步骤 12 的正式验收证据链在 `cpp/scripts/ReleaseChecklist.md`，本文不重复。
 
 ## 1. 两种交付形态
@@ -12,6 +12,13 @@
 
 **两种形态都注册表零写入**：FR-18 规定不做开机自启，`install.bat` 与卸载脚本里没有任何 `reg` 调用，
 `reg` 符号在交叉产物的反汇编扫描里也是 0 命中（`ReleaseChecklist.md` §1）。`.lnk` 只是入口，不是自启项。
+
+**v2.4.0 起 Release 附件的来源变了**：本机没有 MSVC/Windows SDK，`PackageRelease.bat` 第一步（`CleanAndBuild.bat`
+→ `vcvars64.bat`）跑不了；用户裁定 GitHub Release 的附件改用 **WSL mingw 交叉构建件**手组装（stage 布局与
+`PackageRelease.bat` 完全一致：`SuperClip.exe` + `README.md` + `CHANGELOG.md` + `installer\*.bat`）。
+它超 3 MB 体积门（3,664,981 B ≈ 3.49 MB），按 `ReleaseChecklist.md` §6 本该走 B→A→C 降级，本轮等于**直接停在
+"非 MSVC 件"这一档并如实标注**；README「快速开始」有同一个醒目块。拿到这份件的安装/卸载/数据接管流程与
+MSVC 件**没有任何差别**（同一份源码、同一份资源、静态 CRT、导入表 10 个系统 DLL 零网络库）。
 
 ## 2. 发布产物构成
 
@@ -74,7 +81,7 @@ dumpbin /imports    build\Release\SuperClip.exe
 |---|---|---|
 | 单实例 | 命名互斥体 `Local\SuperClip_SingleInstance_9F3A2B1C`；已存在则唤起老实例并退出（返回 0） | `Config.h:80`、`main.cpp:87` |
 | 为什么是 `Local\` | `Global\` 需要 `SeCreateGlobalPrivilege`，标准用户创建会失败 → 语义定为**会话级**单实例 | `Config.h:79` 注释（T1） |
-| 全局热键 | `Ctrl` + `` ` ``（`MOD_CONTROL` + `VK_OEM_3`），失败只记 warn：「Ctrl+` 热键被占用，呼出不可用（可点击托盘）」 | `MainWindow.cpp:587` |
+| 全局热键 | 呼出键 `Ctrl` + `` ` ``（`MOD_CONTROL` + `VK_OEM_3`），失败只记 warn：「Ctrl+` 热键被占用，呼出不可用（可点击托盘）」；接力兜底键 `` Alt `` + `` ` ``（`MOD_ALT` + `VK_OEM_3`，`MOD_NOREPEAT`，Win7 不接受时退回可连发），失败同样只记 warn：「Alt+` 被占用，接力只能用 Alt+左键」。**v2.3.3 起兜底键由 `Ctrl+Alt+空格` 改为此组合**（用户决议）：`Alt+空格` 是 Windows 全局「窗口系统菜单」键，`RegisterHotKey` 会把它从所有程序手里静默抢走；`Ctrl+空格` 撞输入法中英切换；`` Alt+` `` 与呼出键同键位、只差修饰键 | `MainWindow.cpp:771-790` |
 | 托盘 | 双击＝呼出/收起；右键＝「打开 SuperClip / 退出」；收到 `TaskbarCreated` 广播自动重挂 | `TrayService.cpp` |
 | 隐藏宿主窗口 | `WS_POPUP` + `WS_EX_TOOLWINDOW`，0×0 @(-32000,-32000)；**刻意不用 message-only**，否则收不到 `TaskbarCreated` | `HiddenWindow.cpp:38` |
 | 数据目录 | `%APPDATA%\SuperClip\`（`FOLDERID_RoamingAppData`），不存在则创建 | `AppDirs.cpp` |
@@ -82,7 +89,7 @@ dumpbin /imports    build\Release\SuperClip.exe
 | 设置 | `settings.json`（位置/尺寸 DIP、置顶、粘贴模式、复制模式、筛选、绑定进程名） | 步骤 10 实机结论见 `doc/PROJECT.md` §11 |
 | 日志 | `error.log`：追加写；超过 1 MB 保留尾部 512 KB 重写；轮转任一步失败就放弃轮转（宁可超长也不写坏） | `Log.cpp:60`、`Config.h:20` |
 | 崩溃兜底 | `SetUnhandledExceptionFilter` + `set_terminate` → 记 `error.log`；会话关闭时**不弹窗**（弹窗会卡注销） | `main.cpp:34` |
-| **历史落盘时机** | **变更即落盘**：入列、去重迁移、收藏切换、粘贴标记（沉底）、清除、复位、加载后的规范化顺序——每一处都同步整文件重写；退出链的 `SaveToDisk()` 只是最后一次兜底写。写盘走 `history.json.tmp` + `ReplaceFileW`（失败降级 `MoveFileExW`）的原子替换，强杀最坏只丢"那一次没写完的替换"，不会留半截文件 | `Store.cpp:64/100/126/147/166/178`、`StorageService.cpp:140-166`、兜底 `AppContext.cpp:267` |
+| **历史落盘时机** | **变更即落盘**：入列、去重迁移、收藏切换、粘贴标记（沉底）、清除、复位、加载后的规范化顺序——每一处都同步整文件重写；退出链的 `SaveToDisk()` 只是最后一次兜底写。写盘走 `history.json.tmp` + `ReplaceFileW`（失败降级 `MoveFileExW`）的原子替换，强杀最坏只丢"那一次没写完的替换"，不会留半截文件 | `Store.cpp:64/100/126/147/166/178`、`StorageService.cpp:140-166`、兜底 `AppContext.cpp:332` |
 
 运维含义（订正：此前本节误写为"只在退出链落盘"，据代码与实机复查已改）：
 
@@ -116,6 +123,7 @@ dumpbin /imports    build\Release\SuperClip.exe
 | 窗口跑到屏幕外（多显示器拔掉后） | `settings.json` 的 `Left/Top` | 越界值（实测 `Left9000/Top7000`）会回默认停靠；手改文件后重启可强制归位 |
 | 高 DPI 下位置/尺寸不对 | 坐标以 DIP 存储，读侧按当前 DPI 换算 | 150%/200% 排版复核仍是遗留项（`doc/PROJECT.md` §11 步骤 6 未闭环），先固定缩放验证 |
 | 装不上 | 是否提权 | `install.bat`/`uninstall.bat` 都要求管理员；便携版不需要 |
+| 属性面板/任务管理器的「文件说明」显示成 `SuperClip è¶…çº§å‰ªè´´æ…` | exe 的 `VersionInfo.FileDescription`；用 PowerShell 按**码点**读回，别看控制台文本（cp936 管道会把结论骗反） | **v2.3.4 已修**：根因是 `src/res/app.rc`（无 BOM UTF-8）缺编码声明，构建机 ANSI 代码页非 936 时 windres 会把 UTF-8 字节逐个宽化成拉丁字符；已在文件首行加 `#pragma code_page(65001)`（windres 与 MSVC `rc.exe` 都认）。拿到旧版产物（≤ v2.3.3）时只能重新构建，**改不了已出包的 exe**。此缺陷纯外观，不影响任何功能。MSVC 出包路径**未验证**（本机无 SDK） |
 | 怀疑被防火墙拦 | 出站规则 | 按 AC-8 的验收做法：给该 exe 加 `dir=out action=block` 规则再连续复制粘贴 100 次，日志与防火墙记录都应无异常（`ReleaseChecklist.md` §3.4–3.5） |
 
 ## 8. 回滚
