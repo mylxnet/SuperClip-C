@@ -39,7 +39,12 @@ constexpr int kSearchH = 26, kToolBtnH = 28, kToolPady = 8, kToolGap = 8;
 constexpr int kRowGap = 6;               // 卡片间距
 constexpr int kCardRadius = 6;
 constexpr int kTitleBtnGap = 6;          // 标题栏三按钮间距
+constexpr int kTitleIconDip = 18;        // 标题栏左侧应用图标边长
+constexpr int kTitleIconGap = 6;         // 图标与模式文字间距
 constexpr int kModeTextW = 136;          // 标题栏模式文字可点击宽度（DIP）；区域外仍用于拖拽
+constexpr int kSearchClearDip = 16;      // 搜索框右侧清除叉号的可点边长
+constexpr int kSearchClearInset = 6;     // 叉号距搜索框右内缘
+constexpr int kTipOffsetChars = 3;       // 悬浮气泡相对条目左缘右移的字符数
 constexpr float kFontTitle = 14.f;       // 标题栏模式文字
 constexpr float kFontBody = 13.f;        // 条目主内容
 constexpr float kFontMeta = 11.5f;       // 时间戳 / 序号 / 状态栏
@@ -56,9 +61,12 @@ constexpr int kHelpTitleH = 40;                 // 顶部标题带（同时是�
 constexpr int kHelpBtnH = 30, kHelpNavBtnW = 76, kHelpCloseBtnW = 56, kHelpBtnGap = 8;
 
 // 与 src/res/app.rc 的 FILEVERSION 同步（PackageRelease.bat 以 app.rc 为准，并校验本行）
-inline constexpr wchar_t kVersionText[]  = L"v2.0.3";
+inline constexpr wchar_t kVersionText[]  = L"v2.1.1";
 // 署名固定（agent.md 四.3：界面上版本号写在署名之前）
 inline constexpr wchar_t kAppSignature[] = L"by Mr lin";
+// 点击署名交给**系统默认浏览器**打开的仓库地址。程序自身仍零网络代码：不链 wininet/winhttp、
+// 不调 socket，只是 ShellExecuteW(L"open") 一次外部唤起（AC-8 边界见 doc/DESIGN.md ADR）。
+inline constexpr wchar_t kProjectUrl[]   = L"https://github.com/mylxnet/SuperClip-C";
 // 状态栏右侧「vX.Y.Z  by Mr lin」预留宽度（DIP），左栏文字到此为止，避免重叠
 constexpr float kStatusRightW = 116.f;
 
@@ -89,6 +97,7 @@ constexpr UINT WM_APP_CLIP_READY = WM_APP + 2;   // 读取成功 → 投递文�
 constexpr UINT WM_APP_PASTE_DONE = WM_APP + 3;   // M4
 constexpr UINT WM_APP_PICK_DONE  = WM_APP + 4;   // M4
 constexpr UINT WM_APP_SEARCH_ENTER = WM_APP + 5;  // 搜索框回车 → 焦点交回列表（§6.7）
+constexpr UINT WM_APP_RAISE_TOPMOST = WM_APP + 6; // 0x8006 激活后补发置顶（C13，见 MainWindow WM_ACTIVATE）
 
 // 定时器 ID（WM_TIMER.wParam 分派，全进程唯一）
 constexpr UINT_PTR ID_SEARCH      = 1;

@@ -11,15 +11,17 @@
 #include <d2d1.h>
 #include <dwrite.h>
 #include <memory>
+#include <vector>
 
 namespace sc {
 
 class AppContext;
 
-// 命中区域模型（技术方案 §6.2）
-enum class HitZone { None, ModeText, BtnMinimize, BtnTopmost, BtnClose,
+// 命中区域模型（技术方案 §6.2）。Status = 底栏带，只用来"吃掉"点击：
+// 列表视口画到 ClientH()-kStatusF 为止，但按 contentY 算的命中会把底栏点击落到最下面那条上。
+enum class HitZone { None, ModeText, BtnMinimize, BtnTopmost, BtnClose, BtnSignature,
                      SearchBox, BtnFilter, BtnClear, BtnReset, BtnPick,
-                     RowBody, RowStar, ListBackground };
+                     RowBody, RowStar, ListBackground, Status };
 struct HitResult {
   HitZone zone = HitZone::None;
   const ClipItem* item = nullptr;
@@ -64,6 +66,10 @@ class MainWindow {
   void DrawTitleBar(ID2D1RenderTarget* rt, float w);
   void DrawToolbar(ID2D1RenderTarget* rt, float w);
   void DrawStatusBar(ID2D1RenderTarget* rt, float w, float h);
+  void EnsureTitleIcon();                       // 标题栏图标位图（目标级资源，按 DPI 取档）
+  D2D1_RECT_F SignatureRect() const;            // 署名的可点矩形（DIP），量不出来给空矩形
+  void OpenProjectPage();                       // 单击署名：把 URL 交给系统默认浏览器
+  void ScrollSelectionIntoView();               // 快速模式：选中行滚入视口，保证看得见空格会贴哪条
   void ShowRowTip(HWND hwnd);                        // 悬停到期：为截断行浮现全文气泡
   void CancelRowTip(HWND hwnd);                      // 撤销计时并收起气泡
   void ApplySearchFromEdit();                    // FR-06：防抖到点后把编辑框内容下发 Store
@@ -92,6 +98,9 @@ class MainWindow {
   Com<ID2D1Factory> d2dFactory_;
   Com<IDWriteFactory> writeFactory_;
   Com<ID2D1HwndRenderTarget> rt_;
+  Com<ID2D1Bitmap> titleIcon_;             // 目标级：随 rt_ 一起弃，DPI 变了要重取
+  UINT titleIconDpi_ = 0;
+  HINSTANCE inst_ = nullptr;
   Theme theme_;
   std::unique_ptr<ListRenderer> list_;
   HoverTip tip_;

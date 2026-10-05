@@ -111,6 +111,8 @@ void HoverTip::Show(const std::wstring& content, const RECT& rowScreen, UINT dpi
 
   HDC dc = GetDC(hwnd_);
   HGDIOBJ oldFont = dc ? SelectObject(dc, font_) : nullptr;
+  SIZE oneChar{0, 0};                       // 一个全角字宽，用作气泡的右移量
+  if (dc) GetTextExtentPoint32W(dc, L"中", 1, &oneChar);
   SIZE box = WrapSize(dc, text_, textW);
   if (box.cy > textH) {
     // 超出气泡高度：二分"放得下的最长前缀"再补 …（与列表单行裁剪同一思路）
@@ -139,12 +141,12 @@ void HoverTip::Show(const std::wstring& content, const RECT& rowScreen, UINT dpi
   const int wl = static_cast<int>(work.left), wt = static_cast<int>(work.top);
   const int wr = static_cast<int>(work.right), wb = static_cast<int>(work.bottom);
   const int gap = ScaleTip(kTipGapDip, dpi);
-  int x = rowScreen.left;
-  int y = rowScreen.bottom + gap;
-  if (y + winH > wb) {
-    const int above = rowScreen.top - gap - winH;
-    y = above >= wt ? above : std::max(wt, wb - winH);
-  }
+  // v2.1.0：主位改到这一条的**上方**，并从行左缘右移 3 个全角字宽；
+  // 第一条上方放不下时才回落到下方（盖住条目比挪到下方更糟）。
+  const int offset = kTipOffsetChars * std::max(1, static_cast<int>(oneChar.cx));
+  int x = rowScreen.left + offset;
+  int y = rowScreen.top - gap - winH;
+  if (y < wt) y = std::min(static_cast<int>(rowScreen.bottom) + gap, std::max(wt, wb - winH));
   x = std::min(x, wr - winW);
   x = std::max(x, wl);
 

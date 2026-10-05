@@ -29,10 +29,8 @@ bool AppContext::Initialize() {
     LogError(L"app", L"主窗口创建失败，进程退出");
     return false;
   }
-  // 落盘的快速模式在 UI 就绪后补一次「进入即选中第一条」（FR-10 同一口径）
-  if (store_->pasteMode() == PasteMode::Quick && !store_->Selected() &&
-      !store_->Display().empty())
-    store_->Select(store_->Display().front());
+  // 落盘的快速模式在 UI 就绪后补一次「选中位钉第一行」（C14，规则本体在 Store::AnchorQuickSelection）
+  store_->AnchorQuickSelection();
   RestoreBinding();
 
   monitor_.onText = [this](std::wstring text) { OnClipboardText(std::move(text)); };
@@ -236,6 +234,9 @@ void AppContext::WirePicker() {
     statusHint_.clear();
     LogInfo(L"pick", L"状态栏：已绑定 " + (boundProcessName_.empty() ? L"<进程名未知>"
                                                                      : boundProcessName_));
+    // 用户 2026-10-05 决议：绑完目标就该能直接空格连贴——快速模式下把选中位钉回第一行。
+    // 粘贴去向仍走现有链（绑定进程 → 该进程窗口；未绑定 → 呼出前那个窗口），契约未动。
+    store_->AnchorQuickSelection();
     RefreshUi();
   };
   picker_.onCanceled = [this]() { RefreshUi(); };

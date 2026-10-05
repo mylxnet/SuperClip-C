@@ -218,6 +218,16 @@ void Store::RebuildDisplay() {
   if (selected_ && std::find(display_.begin(), display_.end(), selected_) == display_.end()) {
     selected_ = nullptr;
   }
+  AnchorQuickSelection();
+}
+
+// 快速模式：选中位钉在显示区第一行（用户 2026-10-05 决议——复制后直接按空格就贴最新那条，
+// 不必每次先点一下条目）。普通模式一律不动：那边双击即粘贴即收起，钉它只会让灰显标记乱跳。
+// 与 FR-10 原有的"粘完跳下一条未粘贴"不冲突：已粘贴的会沉底，第一行本就是下一条未粘贴。
+void Store::AnchorQuickSelection() {
+  if (pasteMode_ != PasteMode::Quick || display_.empty()) return;
+  if (selected_ == display_.front()) return;
+  Select(display_.front());
 }
 
 std::vector<const ClipItem*> Store::Collection() const {

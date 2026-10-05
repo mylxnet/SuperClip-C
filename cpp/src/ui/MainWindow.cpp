@@ -3,6 +3,7 @@
 #include "../native/SystemInfo.h"
 #include "../util/Log.h"
 #include <windowsx.h>
+#include <shellapi.h>       // 单击署名打开仓库页：ShellExecuteW("open")，不引任何网络库
 #include <wtsapi32.h>     // 会话锁屏通知：点选期间锁屏必须复位光标
 #include <cmath>
 
@@ -22,6 +23,9 @@ constexpr float kToolBtnF = static_cast<float>(kToolBtnH);
 constexpr float kToolPadF = static_cast<float>(kToolPady);
 constexpr float kToolGapF = static_cast<float>(kToolGap);
 constexpr float kTitleBtnGapF = static_cast<float>(kTitleBtnGap);
+constexpr float kTitleIconF = static_cast<float>(kTitleIconDip);
+constexpr float kTitleIconGapF = static_cast<float>(kTitleIconGap);
+constexpr float kModeLeft = kPadF + kTitleIconF + kTitleIconGapF;   // 模式文字左缘（图标右侧）
 constexpr float kListTop = kTitleF + kToolbarF;
 
 // 设备丢失错误码（避免依赖 DXGI 头，值取自 winerror/dxgi）
@@ -34,6 +38,87 @@ constexpr HRESULT kRecreateTarget = static_cast<HRESULT>(0x88FC000CL);   // D2DE
 bool IsDeviceLost(HRESULT hr) {
   return hr == kDeviceRemoved || hr == kDeviceReset || hr == kDeviceHung ||
          hr == kDriverInternal || hr == kRecreateTarget;
+}
+
+// 用 DWrite 量一段文字的实际宽度（DIP）。署名可点区必须和像素对齐，不能按字数估。
+// 必须走 IDWriteFactory：mingw 的 ID2D1RenderTarget 没有 CreateTextLayout 包装（真机有，头没同步），
+// 而排版与 DPI 无关，用工厂建出的 layout 可直接喂给任何渲染目标。
+float MeasureTextW(IDWriteFactory* wf, const wchar_t* text, IDWriteTextFormat* fmt) {
+  if (!wf || !fmt || !text || !*text) return 0.f;
+  Com<IDWriteTextLayout> layout;
+  if (FAILED(wf->CreateTextLayout(text, static_cast<UINT32>(wcslen(text)), fmt, 10000.f, 10000.f,
+                                  layout.put())))
+    return 0.f;
+  DWRITE_TEXT_METRICS m{};
+  return SUCCEEDED(layout->GetMetrics(&m)) ? m.width : 0.f;
+}
+
+// 图标像素 → 预乘 BGRA 缓冲。
+// mingw 的 d2d1.h 没有 ID2D1RenderTarget::CreateBitmapFromHICON（MS 头有，mingw 未同步），
+// 这里只用已链接的 user32/gdi32 取像素，再交给 CreateBitmap 拷贝：不新增任何导入表项。
+void ApplyAndMask(HDC dc, HBITMAP mask, std::vector<UINT8>& px, int w, int h) {
+  if (!dc || !mask) return;
+  BITMAP mb{};
+  if (GetObjectW(mask, sizeof(mb), &mb) != sizeof(mb) || mb.bmWidth < w || mb.bmHeight < h) return;
+  const int stride = ((w + 31) / 32) * 4;      // 1bpp 扫描行按 4 字节对齐
+  std::vector<UINT8> row(static_cast<size_t>(stride));
+  BITMAPINFO bmi{};
+  bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bmi.bmiHeader.biWidth = w;
+  bmi.bmiHeader.biHeight = -h;                  // 负值＝自上而下
+  bmi.bmiHeader.biPlanes = 1;
+  bmi.bmiHeader.biBitCount = 1;
+  bmi.bmiHeader.biCompression = BI_RGB;
+  for (int y = 0; y < h; ++y) {                 // 先全不透明，读到蒙版再打洞，读失败只会多留像素
+    if (GetDIBits(dc, mask, static_cast<UINT>(y), 1, row.data(), &bmi, DIB_RGB_COLORS) != 1) break;
+    for (int x = 0; x < w; ++x) {
+      if ((row[x >> 3] >> (7 - (x & 7))) & 1) {  // AND 蒙版位 1＝透明，1bpp DIB 高位在左
+        UINT8* p = &px[(static_cast<size_t>(y) * w + x) * 4];
+        p[0] = p[1] = p[2] = p[3] = 0;
+      }
+    }
+  }
+}
+
+bool IconToPremultipliedBGRA(HICON icon, std::vector<UINT8>& px, int& w, int& h) {
+  ICONINFO ii{};
+  if (!GetIconInfo(icon, &ii)) return false;
+  bool ok = false;
+  BITMAP cb{};
+  if (ii.hbmColor && GetObjectW(ii.hbmColor, sizeof(cb), &cb) == sizeof(cb) && cb.bmWidth > 0 &&
+      cb.bmHeight > 0 && cb.bmBitsPixel == 32) {
+    w = cb.bmWidth;
+    h = cb.bmHeight;
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -h;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    px.assign(static_cast<size_t>(w) * h * 4, 0);
+    HDC dc = GetDC(nullptr);
+    const int got = dc ? GetDIBits(dc, ii.hbmColor, 0, static_cast<UINT>(h), px.data(), &bmi,
+                                   DIB_RGB_COLORS)
+                       : 0;
+    bool allAlphaZero = true;
+    for (size_t i = 3; i < px.size(); i += 4)
+      if (px[i]) {
+        allAlphaZero = false;
+        break;
+      }
+    if (got == h && allAlphaZero) {
+      // GDI 把第 4 字节当填充位清零的老行为：按蒙版重建，半透明边会被硬切，好过整块黑底
+      for (size_t i = 3; i < px.size(); i += 4) px[i] = 0xFF;
+      ApplyAndMask(dc, ii.hbmMask, px, w, h);
+    }
+    if (dc) ReleaseDC(nullptr, dc);
+    ok = (got == h);
+    if (!ok) px.clear();
+  }
+  if (ii.hbmColor) DeleteObject(ii.hbmColor);
+  if (ii.hbmMask) DeleteObject(ii.hbmMask);
+  return ok;
 }
 
 D2D1_RECT_F Sharpen(D2D1_RECT_F r) {
@@ -76,12 +161,76 @@ void DrawEditPlaceholder(HWND edit) {
   ReleaseDC(edit, dc);
 }
 
+// 清除叉号（v2.1.0）：EDIT 的绘制永远盖在父窗之上，所以只能画在 EDIT 自己里、
+// 命中也在子类里吃掉。清空文本会触发 EN_CHANGE，父窗既有的 300ms 防抖负责把列表还原。
+RECT ClearBtnRect(HWND edit) {
+  RECT rc{};
+  GetClientRect(edit, &rc);
+  const int side = ScaleInt(kSearchClearDip, g_editDpi);
+  const int inset = ScaleInt(kSearchClearInset, g_editDpi);
+  const int cy = (rc.top + rc.bottom) / 2;
+  return RECT{rc.right - inset - side, cy - side / 2, rc.right - inset, cy + side / 2};
+}
+
+void ApplyEditRightMargin(HWND edit, bool hasText) {
+  const int inset = ScaleInt(kSearchClearInset, g_editDpi);
+  const int side = ScaleInt(kSearchClearDip, g_editDpi);
+  const LPARAM m = MAKELPARAM(0, hasText ? inset + side : 0);
+  SendMessageW(edit, EM_SETMARGINS, EC_RIGHTMARGIN, m);
+}
+
+void DrawEditClear(HWND edit) {
+  HDC dc = GetDC(edit);
+  if (!dc) return;
+  const RECT r = ClearBtnRect(edit);
+  const int pad = ScaleInt(3, g_editDpi);
+  HPEN pen = CreatePen(PS_SOLID, ScaleInt(2, g_editDpi), RGB(0x6B, 0x74, 0x85));
+  HGDIOBJ oldPen = pen ? SelectObject(dc, pen) : nullptr;
+  if (pen) {
+    MoveToEx(dc, r.left + pad, r.top + pad, nullptr);
+    LineTo(dc, r.right - pad, r.bottom - pad);
+    MoveToEx(dc, r.right - pad, r.top + pad, nullptr);
+    LineTo(dc, r.left + pad, r.bottom - pad);
+  }
+  if (oldPen) SelectObject(dc, oldPen);
+  if (pen) DeleteObject(pen);
+  ReleaseDC(edit, dc);
+}
+
 LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   const LRESULT r = g_editPrev ? CallWindowProcW(g_editPrev, hwnd, msg, wParam, lParam)
                                : DefWindowProcW(hwnd, msg, wParam, lParam);
   switch (msg) {
     case WM_PAINT:
       if (GetWindowTextLengthW(hwnd) == 0) DrawEditPlaceholder(hwnd);
+      else DrawEditClear(hwnd);
+      break;
+    case WM_SETFONT:
+      ApplyEditRightMargin(hwnd, GetWindowTextLengthW(hwnd) > 0);   // DPI 换字体后按新尺寸让位
+      break;
+    case WM_LBUTTONUP: {
+      if (GetWindowTextLengthW(hwnd) == 0) break;
+      const POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+      const RECT box = ClearBtnRect(hwnd);
+      if (PtInRect(&box, pt)) {
+        SetWindowTextW(hwnd, L"");           // 触发 EN_CHANGE → 父窗防抖重算
+        InvalidateRect(hwnd, nullptr, TRUE);
+        return 0;
+      }
+      break;
+    }
+    case WM_SETCURSOR:
+      if (LOWORD(lParam) == HTCLIENT && GetWindowTextLengthW(hwnd) > 0) {
+        POINT cur{};
+        if (GetCursorPos(&cur)) {
+          ScreenToClient(hwnd, &cur);
+          const RECT box = ClearBtnRect(hwnd);
+          if (PtInRect(&box, cur)) {
+            SetCursor(LoadCursorW(nullptr, IDC_HAND));
+            return TRUE;
+          }
+        }
+      }
       break;
     case WM_CHAR:
     case WM_SETTEXT:
@@ -96,6 +245,7 @@ LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       const bool has = GetWindowTextLengthW(hwnd) > 0;
       if (has != g_editHasText) {
         g_editHasText = has;
+        ApplyEditRightMargin(hwnd, has);     // 先让位再重画，否则打字会钻到叉号底下
         InvalidateRect(hwnd, nullptr, TRUE);
       }
       break;
@@ -110,6 +260,7 @@ LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 bool MainWindow::Create(HINSTANCE inst, AppContext& ctx) {
   ctx_ = &ctx;
+  inst_ = inst;
 
   WNDCLASSEXW wc{};
   wc.cbSize = sizeof(wc);
@@ -145,6 +296,10 @@ bool MainWindow::Create(HINSTANCE inst, AppContext& ctx) {
   ApplyRoundedCorners(hwnd_);
   ShowWindow(hwnd_, SW_SHOWNORMAL);
   UpdateWindow(hwnd_);
+  // C13：置顶请求在「本窗不在前台」时会被系统丢掉（SetWindowPos 返回 TRUE 但 WS_EX_TOPMOST
+  // 没落上，2026-10-05 实机坐实），所以显示后再断言一次，并在 WM_ACTIVATE 里兜底。
+  SetWindowPos(hwnd_, topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   return true;
 }
 
@@ -235,6 +390,14 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         InvalidateRect(hwnd, nullptr, FALSE);
       }
       return 0;
+    case WM_ACTIVATE:
+      // C13 兜底：本窗不在前台时，系统会丢掉置顶请求（SetWindowPos 返回 TRUE 但 ex-style 没变）。
+      // 不能在这条消息里直接改 z-order（系统处理完 WM_ACTIVATE 还会动一次），所以延后一条消息。
+      if (LOWORD(wParam) != WA_INACTIVE && topmost_ &&
+          !(GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)) {
+        PostMessageW(hwnd, WM_APP_RAISE_TOPMOST, 0, 0);
+      }
+      return 0;
     case kMsgDpiChanged: {
       const auto* suggested = reinterpret_cast<const RECT*>(lParam);
       dpi_ = LOWORD(wParam);
@@ -296,7 +459,7 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                              hit.zone == HitZone::BtnClear || hit.zone == HitZone::BtnReset ||
                              hit.zone == HitZone::BtnPick || hit.zone == HitZone::BtnMinimize ||
                              hit.zone == HitZone::BtnTopmost || hit.zone == HitZone::BtnClose ||
-                             hit.zone == HitZone::RowStar;
+                             hit.zone == HitZone::BtnSignature || hit.zone == HitZone::RowStar;
       SetCursor(LoadCursorW(nullptr, clickable ? IDC_HAND : IDC_ARROW));   // §6.1 命中按钮改手型
       if (!trackingLeave_) {
         TRACKMOUSEEVENT tme{sizeof(tme), TME_LEAVE, hwnd, 0};
@@ -409,6 +572,11 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case HitZone::BtnPick:
           ctx_->TogglePick();                         // §5.5：点选中再按一次 = 取消
           break;
+        case HitZone::BtnSignature:
+          OpenProjectPage();                          // 单击署名 = 交给默认浏览器开仓库页
+          break;
+        case HitZone::Status:
+          break;                                      // 底栏其余部分只吃掉，不穿透到条目
         default:
           break;
       }
@@ -487,6 +655,11 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       focus_ = FocusOwner::List;
       SetFocus(hwnd);
       return 0;
+    case WM_APP_RAISE_TOPMOST:                                        // C13：激活后补置顶
+      if (topmost_ && !(GetWindowLongW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)) {
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+      }
+      return 0;
     case WM_APP_PASTE_DONE:
       OnPasteDone(wParam != 0);
       return 0;
@@ -546,7 +719,11 @@ HRESULT MainWindow::CreateRenderTarget(HWND hwnd) {
   return S_OK;
 }
 
-void MainWindow::ReleaseTargetLevel() { rt_.reset(); }
+void MainWindow::ReleaseTargetLevel() {
+  titleIcon_.reset();          // 位图属目标级资源，必须跟着旧渲染目标一起弃
+  titleIconDpi_ = 0;
+  rt_.reset();
+}
 
 void MainWindow::RebuildRows() {
   if (!list_ || !ctx_) return;
@@ -660,8 +837,9 @@ HitResult MainWindow::HitTest(POINT ptClient) const {
       else if (x >= topLeft) out.zone = HitZone::BtnTopmost;
       else if (x >= minLeft) out.zone = HitZone::BtnMinimize;
     }
-    // 仅模式文字本身可点：宽度之外的标题栏留给 WM_NCHITTEST 当拖拽区（zone 保持 None）
-    if (out.zone == HitZone::None && x < kPadF + float(kModeTextW)) out.zone = HitZone::ModeText;
+    // 仅模式文字本身可点：图标与其余标题栏留给 WM_NCHITTEST 当拖拽区（zone 保持 None）
+    if (out.zone == HitZone::None && x >= kModeLeft && x < kModeLeft + float(kModeTextW))
+      out.zone = HitZone::ModeText;
     return out;
   }
   if (y < kListTop) {
@@ -677,6 +855,14 @@ HitResult MainWindow::HitTest(POINT ptClient) const {
       if (x >= bx && x <= bx + widths[i]) { out.zone = zones[i]; return out; }
       bx += widths[i] + kToolGapF;
     }
+    return out;
+  }
+  // 底栏带必须先吃掉：列表视口画到 ClientH()-kStatusF 为止，但下面的命中按 contentY 一路算到底，
+  // 不拦的话点底栏署名会落到最下面那条的星标上（v2.1.0 修掉的误触）。
+  if (y > ClientH() - kStatusF) {
+    const D2D1_RECT_F sig = SignatureRect();
+    out.zone = (sig.right > sig.left && x >= sig.left && x <= sig.right) ? HitZone::BtnSignature
+                                                                        : HitZone::Status;
     return out;
   }
   if (!list_) return out;
@@ -744,14 +930,55 @@ void MainWindow::OnPaint(HWND hwnd) {
   EndPaint(hwnd, &ps);
 }
 
+void MainWindow::EnsureTitleIcon() {
+  if (!rt_ || !inst_) return;
+  if (titleIcon_ && titleIconDpi_ == dpi_) return;
+  titleIcon_.reset();
+  const int px = std::max(1, ScaleInt(kTitleIconDip, dpi_));
+  const HICON icon = static_cast<HICON>(
+      LoadImageW(inst_, MAKEINTRESOURCEW(kIconIdApp), IMAGE_ICON, px, px,
+                 LR_DEFAULTCOLOR | LR_SHARED));
+  if (!icon) {
+    titleIconDpi_ = 0;
+    LogWarn(L"ui", L"标题栏图标载入失败，标题栏只画文字");
+    return;
+  }
+  std::vector<UINT8> bits;
+  int w = 0, h = 0;
+  const bool got = IconToPremultipliedBGRA(icon, bits, w, h);
+  // LR_SHARED 的句柄归系统缓存，绝不能 DestroyIcon
+  if (!got || w <= 0 || h <= 0) {
+    titleIconDpi_ = 0;
+    LogWarn(L"ui", L"标题栏图标像素提取失败，标题栏只画文字");
+    return;
+  }
+  D2D1_BITMAP_PROPERTIES props{};
+  props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+  props.dpiX = static_cast<FLOAT>(dpi_);
+  props.dpiY = static_cast<FLOAT>(dpi_);        // 与目标同 DPI：画进 18 DIP 框即 1:1 设备像素
+  D2D1_SIZE_U size{static_cast<UINT32>(w), static_cast<UINT32>(h)};
+  if (FAILED(rt_->CreateBitmap(size, bits.data(), static_cast<UINT32>(w) * 4, props,
+                               titleIcon_.put())))
+    titleIcon_.reset();
+  titleIconDpi_ = titleIcon_ ? dpi_ : 0;      // 失败就每帧重试，别把空位当成"已按此 DPI 备好"
+}
+
 void MainWindow::DrawTitleBar(ID2D1RenderTarget* rt, float w) {
   rt->FillRectangle(D2D1::RectF(0.f, 0.f, w, kTitleF), theme_.TitleBg());
   rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
 
+  EnsureTitleIcon();
+  const float iconTop = (kTitleF - kTitleIconF) / 2.f;
+  if (titleIcon_) {   // 位图按 px = 18×scale 取的，画进 18 DIP 框即 1:1 设备像素，不重采样
+    rt->DrawBitmap(titleIcon_.get(),
+                   D2D1::RectF(kPadF, iconTop, kPadF + kTitleIconF, iconTop + kTitleIconF));
+  }
+
   const bool quick = ctx_ && ctx_->store().pasteMode() == PasteMode::Quick;
   const std::wstring mode = quick ? L"剪贴板 - 快速模式" : L"剪贴板 - 普通模式";
   rt->DrawText(mode.c_str(), static_cast<UINT32>(mode.size()), theme_.Title(),
-               D2D1::RectF(kPadF, 0.f, w - 3.f * kBtnF - 4.f * kTitleBtnGapF, kTitleF),
+               D2D1::RectF(kModeLeft, 0.f, w - 3.f * kBtnF - 4.f * kTitleBtnGapF, kTitleF),
                theme_.Ink(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
   const float btnTop = (kTitleF - kBtnF) / 2.f;
@@ -767,11 +994,19 @@ void MainWindow::DrawTitleBar(ID2D1RenderTarget* rt, float w) {
       Stroke(rt, ink, cx - r * .4f, cy - r * .4f, cx + r * .4f, cy + r * .4f);
       Stroke(rt, ink, cx - r * .4f, cy + r * .4f, cx + r * .4f, cy - r * .4f);
     } else if (i == 1) {
-      rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy - r * .18f), r * .34f, r * .34f), ink,
-                      1.2f);
-      Stroke(rt, ink, cx, cy + r * .16f, cx, cy + r * .55f);
-      Stroke(rt, ink, cx - r * .38f, cy + r * .55f, cx + r * .38f, cy + r * .55f);
+      // 置顶键（v2.1.0 改形）：斜头图钉。实心帽 + 斜针 + 底横杠，比原来的"圆头直针"在小尺寸下好认；
+      // 启用态整枚换 accent 色并保留下划线。帮助窗第 9 步的文案与此一致。
+      ID2D1SolidColorBrush* c = topmost_ ? theme_.Accent() : ink;
+      const float headR = r * .27f;
+      const float hx = cx - r * .10f;
+      const float hy = cy - r * .22f;
+      rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+      rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(hx, hy), headR, headR), c);
+      rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+      Stroke(rt, c, hx + headR * .55f, hy + headR * .75f, cx + r * .30f, cy + r * .34f, 1.6f);
+      Stroke(rt, c, cx - r * .34f, cy + r * .40f, cx + r * .36f, cy + r * .40f, 1.6f);
       if (topmost_) {
+        rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
         Stroke(rt, theme_.Accent(), sharp.left + 3.f, sharp.bottom - 2.f, sharp.right - 3.f,
                sharp.bottom - 2.f, 1.6f);
       }
@@ -841,6 +1076,25 @@ void MainWindow::DrawStatusBar(ID2D1RenderTarget* rt, float w, float h) {
   rt->DrawText(right.c_str(), static_cast<UINT32>(right.size()), theme_.MetaRight(),
                D2D1::RectF(w - kPadF - kStatusRightW, bar.top, w - kPadF, h), theme_.Muted(),
                D2D1_DRAW_TEXT_OPTIONS_NONE);
+}
+
+// 署名是右侧那串的最后一段，整串按右对齐画到 w-kPadF 为止，所以它的右缘就是 w-kPadF。
+D2D1_RECT_F MainWindow::SignatureRect() const {
+  if (!rt_) return D2D1_RECT_F{};
+  const float sigW = MeasureTextW(writeFactory_.get(), kAppSignature, theme_.Meta());
+  if (sigW <= 0.f) return D2D1_RECT_F{};
+  const float right = ClientW() - kPadF;
+  return D2D1_RECT_F{right - sigW, ClientH() - kStatusF, right, ClientH()};
+}
+
+// 把 URL 交给系统默认浏览器。程序自身不链 wininet/winhttp、不调 socket（AC-8 边界见 DESIGN ADR）。
+void MainWindow::OpenProjectPage() {
+  const INT_PTR res = reinterpret_cast<INT_PTR>(
+      ShellExecuteW(hwnd_, L"open", kProjectUrl, nullptr, nullptr, SW_SHOWNORMAL));
+  if (res <= 32) {
+    LogWarn(L"ui", L"ShellExecute 打开仓库页失败，code=" + std::to_wstring(res));
+    if (ctx_) ctx_->ShowStatusHint(L"没唤起浏览器，地址：" + std::wstring(kProjectUrl));
+  }
 }
 
 // 悬停到期：仅对"被截断"的行浮现全文（设计方案 §7）
@@ -974,7 +1228,7 @@ void MainWindow::TogglePasteMode() {
   const PasteMode next = store.pasteMode() == PasteMode::Quick ? PasteMode::Normal : PasteMode::Quick;
   store.SetPasteMode(next);
   if (next == PasteMode::Quick) {
-    if (!store.Selected() && !store.Display().empty()) store.Select(store.Display().front());
+    store.AnchorQuickSelection();          // FR-10：进入即选中第一行（规则本体在 Store）
   } else {
     store.Select(nullptr);   // 普通模式无强制选中
   }
@@ -1039,7 +1293,20 @@ void MainWindow::OnStoreChanged(const StoreEvent&) {
   const Row* hr = (list_ && hover_) ? list_->FindRow(hover_) : nullptr;
   if (hover_ && !hr) hover_ = nullptr;
   if (hr && hr->truncated) SetTimer(hwnd_, ID_HOVER_TIP, kHoverTipMs, nullptr);
+  if (ctx_ && ctx_->store().pasteMode() == PasteMode::Quick) ScrollSelectionIntoView();
   InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+// 快速模式的选中位由 Store 钉在第一行，空格贴的就是它；高亮若在视口外就必须滚进来，
+// 否则用户看不到"现在空格会贴哪条"。用户自己点选的行本来就可见，这里等于不动。
+void MainWindow::ScrollSelectionIntoView() {
+  if (!list_ || !ctx_) return;
+  const Row* row = list_->FindRow(ctx_->store().Selected());
+  if (!row) return;
+  const float viewH = ClientH() - kStatusF - kListTop;
+  if (row->card.top < scrollY_) scrollY_ = row->card.top;
+  else if (row->card.bottom > scrollY_ + viewH) scrollY_ = row->card.bottom - viewH;
+  ClampScroll(viewH);
 }
 
 }  // namespace sc

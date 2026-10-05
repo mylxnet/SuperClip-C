@@ -4,7 +4,7 @@
 >
 > 复制过的内容它替你留着：一个全局热键呼出列表，选中即粘回你要的地方。不联网、不装运行库、数据只在你自己的机器上。
 
-Windows 7 SP1 – 11（x64） · 版本 [v2.0.3](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
+Windows 7 SP1 – 11（x64） · 版本 [v2.1.1](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
 
 [English](#english) | [中文](#这是什么)
 
@@ -22,12 +22,12 @@ Windows 7 SP1 – 11（x64） · 版本 [v2.0.3](CHANGELOG.md) · 交付 单文�
 
 | 特性 | 描述 |
 |---|---|
-| 自动记录 | 后台监听剪贴链，文本按 SHA-256 去重后置顶；上限 500 条，末位淘汰，收藏项不参与淘汰 |
+| 自动记录 | 后台监听剪贴板，文本按 SHA-256 去重后置顶；上限 500 条，末位淘汰，收藏项不参与淘汰 |
 | 表格拆分 | 复制表格区域时拆成逐格条目并记住来源行列；来源标注不占界面，但仍能被搜到 |
-| 两种粘贴模式 | **普通**＝双击一条即粘贴并收起；**快速**＝列表常驻，空格/回车连续粘贴，粘过的条目灰显沉底 |
+| 两种粘贴模式 | **普通**＝双击一条即粘贴并收起；**快速**＝列表常驻，选中位始终停在第一行，空格连续粘贴，粘过的条目灰显沉底 |
 | 目标绑定 | 默认粘回「呼出前那个窗口」；点工具栏的靶心（「绑定」）进入点选模式，可把目标固定到某个进程 |
-| 搜索 / 过滤 / 收藏 | 300ms 防抖子串搜索；`全部 / 文本 / 表格单元格 / 收藏` 四个视图；收藏只在【收藏】视图出现且不被清除 |
-| 界面 | 380×600 无边框自绘窗口（可拖拽、可缩放、可置顶）、悬停浮现全文气泡、9 步使用帮助 |
+| 搜索 / 过滤 / 收藏 | 300ms 防抖子串搜索，框内有字时右端出现 ✕，点一下清空；`全部 / 文本 / 表格单元格 / 收藏` 四个视图；收藏只在【收藏】视图出现且不被清除 |
+| 界面 | 380×600 无边框自绘窗口（可拖拽、可缩放、可置顶），标题栏带应用图标；悬停 400ms 在该条**上方**浮现全文气泡；9 步使用帮助；单击底栏署名打开本仓库页 |
 | 系统集成 | 托盘常驻、`Ctrl+`` 全局热键、单实例、Per-Monitor V2 DPI 感知、变更即落盘 |
 | 免运行库 | 静态链接 CRT，目标机不需要 .NET，也不需要 VC++ 运行库 |
 
@@ -35,17 +35,21 @@ Windows 7 SP1 – 11（x64） · 版本 [v2.0.3](CHANGELOG.md) · 交付 单文�
 
 | ![主窗列表](doc/images/readme-main.png) | ![搜索过滤](doc/images/readme-search.png) |
 |---|---|
-| 主窗口：序号、内容预览、时间、收藏星标，底栏显示版本与署名 | 搜索框输入即过滤（300ms 防抖），列表实时收窄 |
+| 主窗口：标题栏左侧应用图标，序号、内容预览、时间、收藏星标，底栏显示版本与署名 | 搜索框输入即过滤（300ms 防抖），右端 ✕ 清空，列表实时收窄 |
 
 | ![使用帮助](doc/images/readme-help.png) | ![底栏署名](doc/images/readme-status.png) |
 |---|---|
-| 9 步使用帮助，按钮或 ← → 翻页，`Esc` 关闭 | 底栏放大 2×：状态提示在左，`v2.0.3  by Mr lin` 在右 |
+| 9 步使用帮助，按钮或 ← → 翻页，`Esc` 关闭 | 底栏放大 2×：状态提示在左，`v2.1.1  by Mr lin` 在右（单击署名打开仓库页） |
+
+| ![悬浮全文气泡](doc/images/readme-tip.png) | ![标题栏两态](doc/images/readme-title.png) |
+|---|---|
+| 悬停 400ms 在该条**上方**浮现全文气泡（右移 3 个全角字宽），未截断的行不弹 | 标题栏两态：上＝置顶开（accent 色图钉 + 下划线），下＝置顶关（墨色图钉）；右侧 `✕` 是彻底退出 |
 
 ## 快速开始
 
 ### 使用者（拿到即用）
 
-1. 下载 `SuperClip_v2.0.3_portable.zip`（Releases 页），解压到任意目录。
+1. 下载 `SuperClip_v2.1.1_portable.zip`（Releases 页），解压到任意目录。
 2. 双击 `SuperClip.exe`。托盘出现图标即已在后台记录，无需其他设置。
 3. 在任何应用里按 `Ctrl` + `` ` ``（数字 1 左边那个键）呼出列表，双击一条粘到光标处。
 
@@ -69,7 +73,7 @@ build.bat            # 自动定位 vcvars64.bat → cmake -S . -B build → --c
 cd cpp
 bash build-tests.sh  # 产出 build-mingw/{SuperClip.exe, sc_tests.exe}，把 exe 拿回 Windows 跑
 
-# 在 Windows 侧执行测试，预期"用例 40，断言 214 项，失败 0"
+# 在 Windows 侧执行测试，预期"用例 41，断言 222 项，失败 0"
 build-mingw\sc_tests.exe
 ```
 
@@ -87,7 +91,7 @@ build-mingw\sc_tests.exe
 | 数据 | 自研极简 JSON（约 180 行） | 字段与 .NET v2.0.2 完全一致，两版可直接接管同一份历史 |
 | 哈希 | BCrypt（`bcrypt.dll`） | SHA-256 去重；系统组件，不引第三方库 |
 | 构建 | CMake 3.20 + MSVC，或 mingw-w64 交叉 | 静态 CRT，交付物单文件 |
-| 测试 | `tests/test_main.cpp` 自带极简断言器 | 40 例覆盖纯逻辑层；UI 与粘贴行为靠实机走查 |
+| 测试 | `tests/test_main.cpp` 自带极简断言器 | 41 例覆盖纯逻辑层；UI 与粘贴行为靠实机走查 |
 
 **明确不引入**：.NET / Qt / WinUI / wxWidgets、任何网络库、任何第三方 JSON 或测试框架。
 
@@ -110,14 +114,14 @@ cpp/                         主代码目录
   build.bat                  MSVC 构建入口
   build-tests.sh             WSL/Linux mingw 交叉构建
   src/                       core（纯逻辑）· native（Win32 RAII）· services · ui · app · res · util
-  tests/test_main.cpp        纯逻辑单测（40 例）
+  tests/test_main.cpp        纯逻辑单测（41 例）
   tools/PasteTarget.cpp      粘贴闭环走查用的极简目标程序
   qa/*.ps1                   实机走查驱动（内容一律 ASCII）
   scripts/                   发布与验收脚本（CleanAndBuild / PackageRelease / ReleaseChecklist / make-icon）
   installer/                 install.bat · uninstall.bat
 doc/                         文档（另有一个 images/ 子目录放本文配图）
   SuperClip_设计规范.html     需求契约（FR/AC 条目，v1.2）
-  DESIGN.md                  契约级设计：FR 映射、算法规范、矛盾取值 C1–C13、ADR
+  DESIGN.md                  契约级设计：FR 映射、算法规范、矛盾取值 C1–C14、ADR
   PROJECT.md                 实现级设计：接口签名、消息路由、测试方案、里程碑判据
   PROJECT_STATE.md           当前状态、环境搭建、踩过的坑、架构决策的理由
   TESTING.md                 测了哪些用例、实际结果、已知限制
@@ -134,15 +138,16 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 | 呼出 / 收起列表 | `Ctrl` + `` ` ``；或双击托盘图标 |
 | 记一条内容 | 在任何应用里正常复制（`Ctrl+C`），不需要额外动作 |
 | 粘回刚才的光标处 | 普通模式下双击那条 |
-| 连续粘多条 | 点标题栏的模式文字（或右键选【粘贴模式】）切到快速 → `↑`/`↓` 选中 → 按空格；粘过的会灰显沉底 |
-| 找内容 | 直接敲关键字，300ms 后自动过滤；搜索框内按回车把焦点交回列表 |
+| 连续粘多条 | 点标题栏的模式文字（或右键选【粘贴模式】）切到快速 → **选中位始终钉在第一行**：新复制进来的内容会自动成为选中项，直接按空格就粘最新那条，不用先点（要粘别的条才单击它，单击只选中不粘贴）；粘过的会灰显沉底，选中位回到第一行＝下一条未粘贴 |
+| 找内容 | 直接敲关键字，300ms 后自动过滤；搜索框内按回车把焦点交回列表；框里有字时右端出现 ✕，点一下清空 |
 | 只看表格单元格 / 只看收藏 | 工具栏第一个按钮选视图（全部 / 文本 / 表格单元格 / 收藏） |
 | 收藏一条 | 点那一行右侧的星标。收藏项只在【收藏】视图出现，不会被清除、不会被淘汰 |
 | 清掉历史 | 工具栏「清除」——只清非收藏项，底栏会告诉你清了几个、留了几个 |
 | 恢复原始顺序 | 工具栏「复位」：按时间重排并清掉灰显标记 |
 | 换个粘贴目标 | 点工具栏的靶心（「绑定」）进入点选 → 再点目标窗口。红色＝未绑定（粘回收起前的窗口），绿色＝已绑定该进程；点选期间再按一次靶心或 `Esc` 取消 |
-| 看被截断的全文 | 鼠标停在条上稍等，气泡浮现全文（最多 2000 字） |
-| 移动 / 改大小 / 置顶 | 拖标题栏空白处；拖窗口边缘；点标题栏的置顶按钮 |
+| 看被截断的全文 | 鼠标停在条上稍等（约 0.4 秒），气泡在**这条的上方**浮现全文（最多 2000 字），气泡文字比列表正文右移 3 个字宽 |
+| 移动 / 改大小 / 置顶 | 拖标题栏空白处；拖窗口边缘；点标题栏的图钉——图钉变蓝并带下划线＝已置顶（启动默认就是置顶） |
+| 打开项目页 | 单击底栏的 `by Mr lin`，交给系统默认浏览器打开本仓库页（程序自身不联网，见 [AC-8 边界裁决](doc/DESIGN.md)） |
 | 看使用教程 | 窗口内右键 →「使用帮助」，或按 `Apps` 键唤出菜单；`←`/`→` 翻页，`Esc` 关闭 |
 | 退出 | 标题栏 ✕ 或托盘菜单「退出」（每次入列、收藏、粘贴标记、清除、复位都会立刻写盘，退出时再兜底写一次；收起≠退出，收起后仍在记录） |
 
@@ -162,11 +167,11 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 
 ## 更新日志
 
-详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.0.3**。
+详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.1.1**。
 
 ## 许可证
 
-当前版本**还没有正式的开源许可证文件**。界面底栏的署名是 `v2.0.3  by Mr lin`，
+当前版本**还没有正式的开源许可证文件**。界面底栏的署名是 `v2.1.1  by Mr lin`，
 而 `cpp/src/res/app.rc` 的 `LegalCopyright` 仍是 `Copyright © SuperClip`（是否补署名待项目所有者裁决）。
 采用哪种许可证（MIT / GPL / 仅闭源分发）也要由所有者确定后再补 `LICENSE` 文件，
 并把 `LegalCopyright` 一并改成同一措辞。
@@ -183,7 +188,7 @@ were working in. One global hotkey (`Ctrl` + `` ` ``) brings up the list; nothin
 Hand-rolled ~180-line JSON reader, BCrypt for SHA-256, statically linked CRT.
 No .NET, no Qt, no runtime prerequisites, **no network code at all**.
 
-**Quick start** — unzip `SuperClip_v2.0.3_portable.zip`, run `SuperClip.exe`, press `Ctrl` + `` ` ``.
+**Quick start** — unzip `SuperClip_v2.1.1_portable.zip`, run `SuperClip.exe`, press `Ctrl` + `` ` ``.
 Optionally run `installer\install.bat` as administrator for Start Menu / Desktop shortcuts.
 Uninstalling never deletes your history.
 
@@ -192,8 +197,8 @@ No uploads, no telemetry, no registry writes, no autostart. Your clipboard may c
 folder like a password file.
 
 **Build from source** — `cd cpp && build.bat` (VS2022) or `bash build-tests.sh` for the mingw cross-build;
-unit tests run on Windows: 40 cases / 214 assertions / 0 failures.
+unit tests run on Windows: 41 cases / 222 assertions / 0 failures.
 
-**License** — no license file has been chosen yet. The app's status bar signs "v2.0.3  by Mr lin", while the
+**License** — no license file has been chosen yet. The app's status bar signs "v2.1.1  by Mr lin", while the
 version resource in `app.rc` still reads "Copyright © SuperClip"; both the terms and that wording are the
 project owner's call.

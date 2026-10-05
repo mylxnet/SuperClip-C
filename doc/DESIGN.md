@@ -33,7 +33,8 @@
 | C10 | 收藏条目的显示位置 | `FR-08`"收藏项**置顶分组显示**"、`设计规范` §7"收藏项浅黄背景高亮，且始终位于列表前部" | 与"普通列表不应被收藏项长期占位"的诉求冲突 | **收藏条目只在【收藏】视图显示**，`全部/文本/表格单元格` 三个视图一律剔除（2026-10-04 用户决议）。数组的 `[收藏区 | 非收藏区]` 分区不变式**原样保留**——持久化顺序、`Boundary()` 插入位、`MoveToBack` 沉底、FR-04 末位淘汰都依赖它，改的只是 `RebuildDisplay()` 的过滤条件；收藏区/普通区之间的分隔线随之删除（`Theme::Separator` 画刷一并移除）。副作用：点星标后条目立刻离开当前视图，故切换收藏时状态栏给 3s 去向提示（`ID_STATUS_HINT`） |
 | C11 | 表格来源标注是否上屏 | 本文 §7 曾写"正文下方小字浅蓝 `#5B9BD5` 标注 `来自表格：第 X 行 第 Y 列`"（该色值本身是 2026-10-04 上午刚按用户意见从 `#1E88E5` 调浅的） | 用户复核后认为它"影响整体美观度，而且也没有什么实际意义" | **标注不再绘制**，行高不再随标注浮动（技术方案 §6.4 的 `cardHeight` 去掉 `kLabelGap + kLabelH` 项）；`kLabelH`/`kFontLabel`/`Theme::Label()`/`LabelText()`/`labelPasted_` 全部删除。**但仍是搜索字段**（用户同一次决议补充"不显示，但仍参与搜索"）：`SourceLabel()`、`foldLabel`、`RebuildDisplay()` 的第二个 `ContainsFolded` 与 `SourceRow/SourceCol` 持久化一律保留，单测 §9.3-06/07/08（标注文本）+ §9.4-14（隐藏字段命中）共同钉住 |
 | C12 | 「清除」是否清掉收藏 | `FR-13`"清空所有记录（**含收藏**）" | 与 `FR-08`"收藏……**不参与清理**"直接矛盾（规范自身两处口径相反），用户裁定收藏要永久保存 | **`ClearAll()` 只删非收藏区**，收藏区原序保留并落盘，返回值改为"实际删除条数"；清除后在状态栏给 3s 提示（收藏在【全部】视图不可见，不提示会像"按了没反应"）。想彻底删一条收藏：**先取消收藏 → 再按清除**（用户 2026-10-04 选定，不做右键单条删除、不做确认框）。淘汰上限口径不变（`kMaxItems` 只数非收藏区），副作用是收藏数无上限、`history.json` 随之增长。单测 §9.4-15 |
-| C13 | 启动是否置顶 | 设计方案 §8 早写 `Topmost(默认 true)`，代码里 `topmost_ = false`（步骤 8 遗留） | 用户要求"应用打开默认浮于各窗口最上层" | **按 §8 补齐实现**：`topmost_` 初值 true，`DockToWorkArea` 启动即 `HWND_TOPMOST`，★ 按钮仍可关。`Topmost` 落盘（记住用户关掉的偏好）等步骤 10 `SettingsService`，本轮固定"每次启动都开" |
+| C13 | 启动是否置顶 | 设计方案 §8 早写 `Topmost(默认 true)`，代码里 `topmost_ = false`（步骤 8 遗留） | 用户要求"应用打开默认浮于各窗口最上层" | **按 §8 补齐实现**：`topmost_` 初值 true，`DockToWorkArea` 启动即 `HWND_TOPMOST`，★ 按钮仍可关。`Topmost` 落盘（记住用户关掉的偏好）等步骤 10 `SettingsService`，本轮固定"每次启动都开"。**v2.1.1 补一条系统事实**：本窗**不在前台**时 `SetWindowPos(HWND_TOPMOST)` 会被静默丢弃（返回 TRUE、`gle=0`、`WS_EX_TOPMOST` 不落，2026-10-05 实机坐实，重试与延时均无效），故置顶改为"请求 + 事后断言"两处落地——`Create()` 显示后再断言一次，`WM_ACTIVATE` 里若仍无带则 `PostMessage(WM_APP_RAISE_TOPMOST)` 延后补发（不能在该消息里直接改 z-order，见 `doc/PROJECT_STATE.md` §4 坑 #12） |
+| C14 | 快速模式的选中位要不要跟着新内容走 | `FR-10` 只写了三个瞬间——"进入默认选中第一条""单击仅选中""空格粘贴后沉底并跳下一条未粘贴"，**没有规定列表期间新复制进来的条目是否移动选中位**；按字面实现就是新条目上屏后选中位仍停在原地，用户每次要先点一下才能贴 | 技术方案 §6 未涉及；旧 .NET 版同样只在进入时选第一条。用户 2026-10-05 提出"绑定后始终自动选中第一行，按空格直接复，不要每次先点再贴" | **Quick 模式下选中位钉在 `display_.front()`**：规则收口在 `Store::AnchorQuickSelection()` 一处（非 Quick 或显示区为空即空操作，已是首行则不发事件），由 `RebuildDisplay()` 末尾自动调用——入列、切换过滤、搜索、`Reset` 都经过它；`TogglePasteMode()` 与点选绑定回调 `AppContext::WirePicker()` 显式补调。粘完沉底后 `front()` 本就是下一条未粘贴，与 `FR-10` 原文不冲突。**粘贴去向不动**（同轮用户选定"仍粘回当前焦点窗口"）：绑定进程→该进程窗口、未绑定→呼出前窗口，`FR-11` 链与契约原文一律不改。普通模式永不自动挪选中位。UI 侧 `MainWindow::ScrollSelectionIntoView()` 在 Quick 下把钉住的行滚进视口，避免高亮在可视区外。单测 §9.4-16 |
 
 ---
 
@@ -70,6 +71,14 @@ WPF/WinForms/WinRT/Qt/Boost/HTTP 库/遥测。**零第三方依赖**（原 ADR �
 —— `uuid` 只是 GUID 数据不产生导入，`advapi32`/`oleaut32` 当前无被调符号故不在表内；`msvcrt.dll` 是 mingw 静态 CRT 残留，MSVC `/MT` 版待 `dumpbin /dependents` 结案。
 全部为系统本地 DLL 导出，无 socket/WinHTTP/WinINet/Curl 符号。验收方式：链接期不引用网络库 + Windows 防火墙出站规则拦截 `SuperClip.exe` 后功能无变化。
 
+**AC-8 边界裁决（2026-10-05，v2.1.0）**：状态栏署名 `by Mr lin` 由"不可交互文字"改为"单击交给默认浏览器打开仓库页"。
+实现只用 `ShellExecuteW(hwnd, L"open", kProjectUrl, ...)`（`shell32`，早已在链上），本进程内**不建立任何套接字、不加载任何网络栈、
+不解析 HTTP**——联网动作发生在系统已选定的外部浏览器进程里，与用户自己双击一个 `.url` 快捷方式同构，本程序只是交出那个字符串。
+因此 AC-8「无网络通信」对 SuperClip 本体仍然成立，结案口径不变：上面那份导入表 + 防火墙出站拦截后功能无变化。
+代价与边界要如实记：① 点击后是否真的联网由浏览器和用户的网络状态决定，本程序无从知晓也无从限制；
+② `kProjectUrl` 是编译期常量，写死在 `src/core/Config.h`，不发外部请求去取；③ 失败（返回 ≤32）只写 `error.log` 并在状态栏提示，不重试、不弹错误框。
+若按最严解读"任何导致联网的行为都算违反 AC-8"，这条即不合规，需回退为不可点击的静态署名。
+
 ---
 
 ## 2. 功能需求清单（继承 FR-01..FR-18）
@@ -85,7 +94,7 @@ WPF/WinForms/WinRT/Qt/Boost/HTTP 库/遥测。**零第三方依赖**（原 ADR �
 | FR-07 | 过滤：全部/文本/表格单元格/收藏 | `FilterType` 枚举 |
 | FR-08 | ★/☆ 切换；收藏只在【收藏】视图显示（C10）；**不参与「清除」**（C12）；持久化 | `Store::ToggleFavorite` → `ApplyOrder` |
 | FR-09 | 普通模式双击粘贴 → 灰显、位置不变 | `WM_LBUTTONDBLCLK` → `DoPaste(item, moveToEnd=false)` |
-| FR-10 | 快速模式：进入默认选中第一条；单击仅选中；空格粘贴 → 灰显 + 沉底 + 跳下一条未粘贴 | `PasteMode::Quick` + `WM_KEYDOWN VK_SPACE` |
+| FR-10 | 快速模式：进入默认选中第一条；单击仅选中；空格粘贴 → 灰显 + 沉底 + 跳下一条未粘贴。**C14 加固（2026-10-05）**：选中位**始终**钉在显示区第一行（切换模式、新内容入列、过滤/搜索、绑定完成后自动钉住），空格即粘最新一条，无需先点；粘贴去向仍按同轮决议"粘回当前焦点窗口"，契约原文未改 | `PasteMode::Quick` + `WM_KEYDOWN VK_SPACE` + `Store::AnchorQuickSelection()` |
 | FR-11 | 写剪贴板 → 激活目标窗口 → 发送 Ctrl+V | `PasteService::PasteTextAsync` |
 | FR-12 | 标题栏第 2 图标切 `TopMost`；**应用打开默认即置顶**（2026-10-04 C13） | `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`，`topmost_` 初值 true |
 | FR-13 | 「清除」= 清空非收藏记录；**收藏条目永久保留、不受清除影响**（2026-10-04 C12，原"含收藏"作废） | `Store::ClearAll()` 只删非收藏区，返回删除条数供状态栏提示 |
@@ -199,21 +208,36 @@ WPF 需要它是为了避免 `ItemsSource` 重置导致选中丢失、滚动归�
 | 模式 | 进入 | 选中 | 粘贴触发 | 粘贴后 |
 |---|---|---|---|---|
 | 普通（默认） | 标题栏模式文字点击切换 | 无强制选中 | **双击**记录 | 灰显，**位置不变** |
-| 快速 | 同上 | 进入时默认选中第一条；单击仅切换选中（高亮） | **空格**（焦点不在搜索框/下拉时） | 灰显 + **移到列表最末** + 自动选中下一条未粘贴（支持连续空格连贴） |
+| 快速 | 同上 | **选中位钉在显示区第一行**（C14：进入、新内容入列、过滤/搜索、点选绑定完成后都会重新钉住）；单击仅切换选中（高亮） | **空格**（焦点不在搜索框/下拉时） | 灰显 + **移到列表最末** + 选中位回第一行＝下一条未粘贴（支持连续空格连贴） |
 
 AC 明确：单击在快速模式下**只选中不粘贴**，防误触。
+C14（2026-10-05 用户决议）补充：钉住第一行后，"粘最新那条"不需要先点一下；**粘贴去向不变**（同轮选定"仍粘回当前焦点窗口"），
+绑定进程→该进程窗口、未绑定→呼出前窗口的现有链一律不动，`FR-10` 契约原文未改。普通模式不钉。
 
-### 5.2 标题栏三图标
+### 5.2 标题栏图标（v2.1.0 起：左侧 1 枚应用图标 + 右侧 3 枚按钮）
 
 | 位 | 功能 | C++ 动作 |
 |---|---|---|
-| ① 最左 收起 | 最小化到托盘，继续监听 | `ShowWindow(SW_HIDE)`，三窗口均不销毁 |
+| ⓪ 最左 应用图标 | **纯装饰、不可点击**，与任务栏/托盘同源（`kIconIdApp` = 101） | `LoadImageW(IMAGE_ICON, px)` → `GetIconInfo`+`GetDIBits` 取预乘 BGRA → `ID2D1RenderTarget::CreateBitmap`，按 DPI 缓存、随 `rt_` 弃置（`EnsureTitleIcon()`）。左缘 `kPad`，边长 `kTitleIconDip = 18` DIP，与模式文字间隔 `kTitleIconGap = 6` |
+| ① 最右起第 3 个 收起 | 最小化到托盘，继续监听 | `ShowWindow(SW_HIDE)`，三窗口均不销毁 |
 | ② 中间 悬浮 | 切 `TopMost`，开启态图标高亮；**启动默认开启**（C13） | `SetWindowPos` 置顶/取消；`topmost_` 初值 true，`DockToWorkArea` 用 `HWND_TOPMOST` |
 | ③ 最右 关闭 | **彻底退出** | `AppContext::Exit`：卸钩子 → 复位光标 → 注销热键 → `RemoveClipboardFormatListener` → `NIM_DELETE` → 销毁窗口 → 消息循环退出 |
+
+**悬浮键的图形（v2.1.0 改形）**：原形态是一个居中"图钉"轮廓，实机反馈两条——和帮助窗第 9 步描述的图形对不上、
+且开启态不够显眼。现改为**斜图钉**：针头圆（偏左上）+ 45° 针身 + 底部短横杠，未置顶时灰描边、
+置顶时填 accent 色并在下方加一条 accent 下划线（双通道表达状态，不只靠颜色）。帮助窗第 9 步文案同步为
+「点标题栏的图钉……图钉变蓝并带下划线＝已置顶」。**待实机复核**：150%/200% 下针头与下划线是否仍然清楚（沿用 §4 遗留项）。
+
+**为什么不用 `CreateBitmapFromHICON`**：MS 的 `d2d1.h` 有这个方法，mingw 的头没有（vtable 里也不在其声明序中），
+交叉构建直接报"无此成员"。走 GDI 取像素再 `CreateBitmap` 拷贝，只用已在链上的 `user32`/`gdi32`，
+**不引入 `windowscodecs`**，导入表因此与 v2.0.3 逐字一致（见 §1.2）。GDI 若把第 4 字节当填充位清零，
+回落用 AND 蒙版重建 alpha（边沿会硬切，但胜过整块黑底），代码在 `MainWindow.cpp` 的 `IconToPremultipliedBGRA`。
 
 ### 5.3 模式切换入口
 标题栏文字「剪贴板 - 普通模式」/「剪贴板 - 快速模式」，**点击该文字切换**（非两个独立按钮）。
 该文字区必须返回 `HTCLIENT`（否则点击变成拖拽，永远收不到 `WM_LBUTTONUP`）；标题栏拖拽区因此只剩"模式文字右侧 ~ 最左按钮"之间的空白（`kModeTextW = 136` 逻辑px 覆盖文字本身）。
+v2.1.0 加了最左的应用图标后，模式文字的起点从 `kPad` 挪到 `kModeLeft = kPad + kTitleIconDip + kTitleIconGap`；
+**命中区与绘制区必须用同一个 `kModeLeft`**，否则图标会吃掉本该切模式的点击、或点击落在文字上却判成拖拽区。
 
 ### 5.4 其他交互（继承技术方案 §5.8）
 - 空格：窗口级预处理按键（快速模式且有选中项）；焦点在 `EDIT`/`COMBOBOX` 时放行原生输入。
@@ -320,6 +344,9 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 | 键盘模拟 | `SendInput`（`VK_CONTROL` / `VK_V` / `KEYEVENTF_KEYUP`） |
 | 全局热键 | `RegisterHotKey` / `UnregisterHotKey` |
 | 托盘 | `Shell_NotifyIconW` `RegisterWindowMessageW("TaskbarCreated")` `LoadImageW` |
+| 标题栏图标像素 | `LoadImageW(IMAGE_ICON, LR_SHARED)` `GetIconInfo` `GetObjectW` `GetDIBits` `DeleteObject` →（D2D）`ID2D1RenderTarget::CreateBitmap`（v2.1.0；全部落在已链接的 user32/gdi32/d2d1 内，不引 `windowscodecs`） |
+| 署名单击开仓库页 | `ShellExecuteW(..., L"open", kProjectUrl, ...)`（v2.1.0；边界裁决见 §1.2，本进程不联网） |
+| 搜索框内嵌清除叉号 | `EM_SETMARGINS(EC_RIGHTMARGIN)`（有字时给右端留出叉号位）`SetWindowTextW(L"")`（点叉号清空）——都在 `EDIT` 的子类过程 `EditProc` 内 |
 | 弹出菜单 | `CreatePopupMenu` `AppendMenuW` `TrackPopupMenuEx` `DestroyMenu` `GetCursorPos` |
 | 低层鼠标钩子 | `SetWindowsHookExW(WH_MOUSE_LL)` `UnhookWindowsHookEx` `CallNextHookEx` `WindowFromPoint` |
 | 光标 | `LoadCursorW` `SetSystemCursor` `SystemParametersInfoW(SPI_SETCURSORS / SPI_GETWHEELSCROLLLINES)` |
@@ -334,9 +361,9 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  剪贴板 - 普通模式            [收起] [悬浮] [关闭]  │ ← 模式文字可点击切换
+│  [图标]  剪贴板 - 普通模式       [收起] [悬浮] [关闭] │ ← 图标纯装饰；模式文字可点击切换
 ├──────────────────────────────────────────────────┤
-│  [ 🔍 搜索框........ ]                             │ ← EDIT 子控件（IME 完好）
+│  [ 🔍 搜索框............              ✕ ]         │ ← EDIT 子控件（IME 完好）；✕ 仅框内有字时出现
 │  [ 全部▾ ] [ 清除 ] [ 复位 ] [ 🎯绑定 ]            │ ← 工具栏
 ├──────────────────────────────────────────────────┤
 │  1  文本内容预览…                   12:30:00  ☆   │ ← 星标独占最右一列、垂直居中
@@ -344,7 +371,7 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 │  3  普通文本…                       12:28:00  ☆   │
 │  …（已粘贴项灰显 + 半透明；收藏项只在【收藏】视图出现）│
 ├──────────────────────────────────────────────────┤
-│  已绑定：EXCEL            v2.0.3  by Mr lin       │ ← 状态栏 22px：版本号在署名之前
+│  已绑定：EXCEL     v2.1.0  by Mr lin（可点击）    │ ← 状态栏 22px：版本号在署名之前
 └──────────────────────────────────────────────────┘
 ```
 
@@ -366,9 +393,14 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 
 **来源标注不再上屏**（2026-10-04 用户决议，见 §0.1 C11）：`来自表格：第 X 行 第 Y 列` 一行小字原先画在正文下方，因"影响整体美观、也没有实际意义"取消；行高因此不再随标注浮动（所有行等高）。但 `ClipItem::SourceLabel()` 与 `foldLabel` **保留**，`Store::RebuildDisplay()` 仍用它做搜索命中——用户在同一决议里明确"不显示，但仍参与搜索"，所以搜 `来自表格` / `第 2 行` 依旧能捞到对应单元格（单测 §9.4-14 钉住该行为）。`SourceRow/SourceCol` 继续读写与持久化。
 
-**悬浮全文气泡**：仅对"被截断"的行生效。光标停在行上 400ms 后，在该行下沿浮现自绘气泡（`HoverTip`，白底 + `#C9CFD8` 边框 + 正文 `#272C36`），显示条目**完整内容**（保留换行，最长 2000 字，超出补 `…`；宽 ≤320 / 高 ≤240 逻辑px，超框按放得下的最长前缀裁剪）。`WS_EX_TOPMOST|TOOLWINDOW|NOACTIVATE|TRANSPARENT`：不抢焦点、点击穿透。滚轮、数据变化、鼠标离开、点击、窗口收起即刻收起；未截断的行不弹。
+**悬浮全文气泡**：仅对"被截断"的行生效。光标停在行上 400ms 后浮现自绘气泡（`HoverTip`，白底 + `#C9CFD8` 边框 + 正文 `#272C36`），显示条目**完整内容**（保留换行，最长 2000 字，超出补 `…`；宽 ≤320 / 高 ≤240 逻辑px，超框按放得下的最长前缀裁剪）。`WS_EX_TOPMOST|TOOLWINDOW|NOACTIVATE|TRANSPARENT`：不抢焦点、点击穿透。滚轮、数据变化、鼠标离开、点击、窗口收起即刻收起；未截断的行不弹。
+**位置（v2.1.0 改）**：主位改到该条**上方**，水平从行左缘**右移 3 个全角字宽**（`kTipOffsetChars = 3`，一个字宽用 `GetTextExtentPoint32W(L"中")` 现场量，随 DPI 走，不写死像素）——原先贴在行下沿会盖住下面几条，而正文向右缩进 3 字正好和列表的文字起点对齐。第一条上方放不下时才回落到行下方，回落位置同样钳进工作区。横向仍 `min(行右界, 工作区右缘-宽)` 后再 `max(左缘)`，越界即钳。
 
-**占位提示**：搜索框为空时在 `EDIT` 上方叠加自绘文字，非空时失效隐藏（对应原 `EmptyToVisibleConverter`）。
+**占位提示与清除叉号**：搜索框为空时在 `EDIT` 上方叠加自绘文字「搜索…」，非空时失效隐藏（对应原 `EmptyToVisibleConverter`）。
+**v2.1.0 起**：框内有字时右端再画一个 ✕（边长 `kSearchClearDip = 16` DIP、距右内缘 `kSearchClearInset = 6` DIP，2px 笔、`#6B7485`）。
+它必须画在 `EditProc` 的 `WM_PAINT` 里而不是主窗：`EDIT` 是真子窗，永远盖在父窗之上，父窗画的叉号会被文字盖掉。
+同时用 `EM_SETMARGINS(EC_RIGHTMARGIN)` 给文本留出叉号位，避免长串末尾被叉压住；悬停时 `WM_SETCURSOR` 换手型，
+`WM_LBUTTONUP` 落在叉区内直接 `SetWindowTextW(hwnd, L"")` 清空（清空走的是原生编辑路径，后面接的 `EN_CHANGE` 自然触发既有 300ms 搜索防抖，不另开一条清除链）。
 
 **帮助窗**：`HelpWindow` 无边框模态，9 步静态引导（呼出热键、自动记录、双模式、收藏、绑定、复制模式、搜索、清除/复位、置顶）。
 实现口径（2026-10-04 步骤 11 实机确认）：`WS_POPUP` + `WS_EX_TOOLWINDOW|TOPMOST`、主窗的 owned window，
@@ -377,6 +409,13 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 翻页 `上一步/下一步` 在首末位钳住并禁用按钮，`N / 9` 计数画在标题带右侧 44 逻辑px 位内，重新打开回到 `1 / 9`；
 `Esc` 与「关闭」都还原主窗可用并把焦点交回。实机已验：鼠标点击与 `VK_RIGHT` 翻页、钳位、模态、还原；
 **未验**：150%/200% DPI 下的排版（沿用步骤 6 的遗留项）。
+
+**状态栏右侧「vX.Y.Z  by Mr lin」**：署名区在 v2.1.0 起可点击（`HitZone::BtnSignature` → `OpenProjectPage()`，见 §1.2 的 AC-8 边界裁决）。
+可点矩形按 `IDWriteFactory::CreateTextLayout` 实度量出的文字宽度算，右边贴 `ClientW()-kPad`，**不按字数估**，否则手型光标和命中区会错位。
+> 同一处还修掉一个**命中穿透缺陷**（用户报"点 Mr lin 结果改了下面条目的收藏"）：`HitTest` 早先只看 `contentY`，
+> 列表视口虽然只画到 `ClientH()-kStatusF`，但落在底栏的点击仍被算进最下面那一条 → 误切收藏。
+> 现在底栏带先行判定：`y > ClientH()-kStatusF` 时只可能返回 `BtnSignature` 或 `Status`，`Status` 在 `WM_LBUTTONUP` 里显式 `break` 什么都不做。
+> 这是独立于"署名要不要可点"的缺陷，即便署名保持静态也必须修。
 
 **交互细节保留**：标题栏按钮区不触发拖拽；搜索框上右键保留原生编辑菜单；筛选下拉选中值手动同步到 Store（原实现为规避双向绑定失步，C++ 下天然单向下发）。
 
@@ -461,7 +500,7 @@ SuperClip/                            # 本仓库（C++ 重写版；下面是 20
 │  │  ├─ ui/ MainWindow · ListRenderer · Theme · HoverTip · HelpWindow
 │  │  ├─ res/ app.rc（VERSIONINFO + 101 ICON）· app.manifest（PerMonitorV2 + comctl6）· SuperClip.ico
 │  │  └─ util/ Log.h/.cpp
-│  ├─ tests/test_main.cpp             # 40 例，自带极简断言器（无 Catch2）
+│  ├─ tests/test_main.cpp             # 41 例，自带极简断言器（无 Catch2）
 │  ├─ tools/PasteTarget.cpp           # 粘贴闭环走查用的极简目标程序
 │  ├─ qa/*.ps1                        # 实机走查驱动（内容一律 ASCII）
 │  ├─ scripts/                        # 发布与验收脚本（CleanAndBuild / PackageRelease / ReleaseChecklist）
@@ -525,9 +564,9 @@ link /SUBSYSTEM:WINDOWS /LTCG
 |---|---|---|
 | §9.2 `TableParser` IsTable/Parse | **13** | 表格识别、拆分、空单元格/空行、`\r\n`/`\r` 规范化、`CopyMode` 两态、列号不前移 |
 | §9.3 `Sha256::Hex` + `ClipItem::SourceLabel` | **8** | 已知向量、空内容不计哈希、中文稳定小写 hex、不同内容不同哈希、长文本；普通文本无标注、单元格标注、无行列防御 |
-| §9.4 `Store` 状态机 | **15** | 去重与收藏态迁移、插入位＝收藏数量、末位淘汰（C7）、收藏永不淘汰、稳定分区保序、表格整块不倒序、快速沉底（非收藏／收藏区末位 C8）、存盘重载顺序一致、`Reset` 清灰显＋时间降序（C5）、全角/大小写折叠搜索、过滤+搜索+选中保持、收藏仅在【收藏】视图（C10）、标注不上屏仍参与搜索（C11）、清除保留收藏（C12） |
+| §9.4 `Store` 状态机 | **16** | 去重与收藏态迁移、插入位＝收藏数量、末位淘汰（C7）、收藏永不淘汰、稳定分区保序、表格整块不倒序、快速沉底（非收藏／收藏区末位 C8）、存盘重载顺序一致、`Reset` 清灰显＋时间降序（C5）、全角/大小写折叠搜索、过滤+搜索+选中保持、收藏仅在【收藏】视图（C10）、标注不上屏仍参与搜索（C11）、清除保留收藏（C12）、快速模式选中位钉第一行（C14） |
 | §9.6 `Settings` 往返 | **4** | .NET 文件读入并逐字节写回、全字段往返（含绑定进程名）、缺失/损坏回落默认、越界与类型不符按字段作废 |
-| **合计** | **40 例 / 214 断言 / 0 失败** | —— |
+| **合计** | **41 例 / 222 断言 / 0 失败** | —— |
 
 **UI 层不做条件编译式打桩**：需要真实 Windows 桌面实机验证（无法在本环境完成的部分，交付时逐项标注"未验证"）。
 
@@ -538,9 +577,9 @@ link /SUBSYSTEM:WINDOWS /LTCG
 | # | 标准 | C++ 验证方式 |
 |---|---|---|
 | AC-1 | Excel 复制后自动拆单元格并标注行列 | 单测（TSV 输入）+ 实机 Excel 复现 |
-| AC-2 | 双击/空格粘贴到目标光标处；快速粘贴沉底变灰 | 实机：记事本、Excel、浏览器三类目标 |
+| AC-2 | 双击/空格粘贴到目标光标处；快速粘贴沉底变灰；**快速模式选中位钉在第一行**（C14，不点条目直接空格即贴最新一条） | 实机：记事本、Excel、浏览器三类目标 |
 | AC-3 | 重启后历史/收藏/灰显/**排序**全保留；按「清除」后**收藏条目仍在**（C12） | 实机 + `history.json` 与 .NET 版互读 |
-| AC-4 | 悬浮置顶开/关，且**启动默认开**（C13） | 实机（`GWL_EXSTYLE` 的 `WS_EX_TOPMOST` 位 + ★ 图标下划线） |
+| AC-4 | 悬浮置顶开/关，且**启动默认开**（C13） | 实机（判据只认 `GWL_EXSTYLE` 的 `WS_EX_TOPMOST` 位，不认 API 返回值；图钉键的置顶态下划线见 `doc/images/readme-title.png` 两态）。v2.1.1：冷启动连续两次位为 1；`WM_ACTIVATE` 兜底分支**未触发过**，标未验证 |
 | AC-5 | 每行显示当前顺序序号 | 实机（过滤/搜索后序号随显示位置变化） |
 | AC-6 | 普通双击、快速空格均命中光标处 | 实机 |
 | AC-7 | 任意 Win x64 免运行时双击即用、常驻托盘 | 干净虚拟机（未装 .NET/VC 运行库）测试 |
@@ -577,8 +616,14 @@ link /SUBSYSTEM:WINDOWS /LTCG
 | 搜索比较方式 | 入列时预计算折叠键（全角→半角 + ASCII 大小写），运行期纯 `find` | 内容不可变 → 缓存天然安全；避免每字符 O(n) 折叠；明确不对西里尔/希腊字母折叠（中文场景无损） |
 | 灰显实现 | 前景/底色**预混合**，不用 `PushLayer` | `PushLayer` 会使 ClearType 降级为灰度抗锯齿，中文发糊 |
 | 筛选下拉 | `TrackPopupMenuEx` 弹出菜单，不用 `COMBOBOX` | 与自绘风格一致、免主题割裂、代码更短 |
-| 搜索框占位提示 | `EM_SETCUEBANNER` | 替代原 `EmptyToVisibleConverter` 的叠加绘制，IME 与焦点行为由系统保证 |
+| 搜索框占位提示 | **`EditProc` 的 `WM_PAINT` 自绘**（原记 `EM_SETCUEBANNER` 与落码不符，2026-10-05 订正） | 实测未用系统 cue banner：自绘才能控制颜色/字号与 `EDIT` 底色一致，且 v2.1.0 的清除叉号本来就必须画在同一条 `WM_PAINT` 路径里 |
 | 图标绘制 | D2D 几何路径（窗口按钮/靶心），★☆ 用字形 | Win7 无 `Segoe MDL2 Assets`，跨版本字形宽度不稳 |
+| 标题栏应用图标 | `LoadImageW` → GDI 取像素 → `ID2D1RenderTarget::CreateBitmap` | mingw 头无 `CreateBitmapFromHICON`；走 GDI 不引 `windowscodecs`，导入表保持与 v2.0.3 逐字一致（§5.2、§1.2） |
+| 置顶键形态 | 斜图钉（针头圆 + 45° 针身 + 底横杠），开启态填 accent 色并加下划线 | 用户 2026-10-05 指定：原形态与帮助窗描述不符且开启态不明显；状态用"填色 + 下划线"双通道表达，不单靠颜色 |
+| 搜索框清除方式 | 框内有字时右端 ✕，点击即清空（`SetWindowTextW(L"")`） | 清空后由原生 `EN_CHANGE` 接既有 300ms 防抖，不另开第二条清除链；留白用 `EM_SETMARGINS` 解决，避免压字 |
+| 悬浮气泡位置 | 行的**上方**，水平右移 3 个全角字宽（字宽现场量） | 用户 2026-10-05 指定：原贴行下沿会盖住下面几条；3 字宽和列表正文起点对齐 |
+| 署名单击 | `ShellExecuteW("open", kProjectUrl)` 交给默认浏览器 | 用户 2026-10-05 指定；AC-8 边界裁决见 §1.2 —— 本进程零网络代码，联网发生在外部浏览器 |
+| 底栏命中判定 | 状态栏带**优先**判定，带内只返回 `BtnSignature`/`Status`，`Status` 不改任何状态 | 缺陷修复：`contentY` 会把底栏点击算进最下面一条，误切收藏（用户报"点 Mr lin 改了下面条目收藏"） |
 | 栈回溯 | `CaptureStackBackTrace`，不链接 `dbghelp` | 免符号搜索路径与潜在网络符号下载，保持 AC-8 |
 
 ---
@@ -621,4 +666,4 @@ M1+M2 完成即有一份"无界面但逻辑可测"的可运行内核；M4 是风
 
 ## 17. 交付声明
 
-本文是 SuperClip C++ 版的完整实现契约：§2 的 FR 语义、§4 的算法、§5 的状态机、§6 的 Win32 集成、§7 的 UI、§8 的持久化与数据互通、§12 的测试与 §13 的验收条款，任一开发者或 AI 依此即可在 Windows + MSVC 环境从零重建可运行应用，无需参考既有源码。§0.1 的 **12 项矛盾取值（C1–C7、C9–C13；C8 记在技术方案 §3.3）**、§14 的 **T1–T6 决议**与全部 ADR 为强制约定，实现者不得自行改回。模块级接口、消息路由表、降级矩阵与构建脚本细节见配套文档 `doc/PROJECT.md`。
+本文是 SuperClip C++ 版的完整实现契约：§2 的 FR 语义、§4 的算法、§5 的状态机、§6 的 Win32 集成、§7 的 UI、§8 的持久化与数据互通、§12 的测试与 §13 的验收条款，任一开发者或 AI 依此即可在 Windows + MSVC 环境从零重建可运行应用，无需参考既有源码。§0.1 的 **13 项矛盾取值（C1–C7、C9–C14；C8 记在技术方案 §3.3）**、§14 的 **T1–T6 决议**与全部 ADR 为强制约定，实现者不得自行改回。模块级接口、消息路由表、降级矩阵与构建脚本细节见配套文档 `doc/PROJECT.md`。

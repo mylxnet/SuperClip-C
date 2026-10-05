@@ -46,7 +46,7 @@ function New-Row([int]$minutesAgo, [string]$content, [int]$type, [int]$row, [int
 $tab = [char]9
 $rows = @(
   New-Row  2 "https://example.com/docs/clipboard-api#settext"                    0 0 0 $true  $false
-  New-Row  6 "Release v2.0.3 checklist: dumpbin, clean VM, tray icon, signature" 0 0 0 $true  $false
+  New-Row  6 "Release v2.1.0 checklist: dumpbin, clean VM, tray icon, signature" 0 0 0 $true  $false
   New-Row 11 "Meeting notes: freeze non-critical merges before the Thursday cut"  0 0 0 $false $false
   New-Row 17 ("Name" + $tab + "Qty" + $tab + "Price" + "`r`n" + "Widget-A" + $tab + "12" + $tab + "3.50" + "`r`n" + "Widget-B" + $tab + "7" + $tab + "18.00") 0 0 0 $false $false
   New-Row 23 "North"        1 3 2 $false $false

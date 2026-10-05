@@ -34,6 +34,11 @@ constexpr int kWinW = 380, kWinH = 600, kMinW = 320, kMinH = 420;
 constexpr int kTitleH = 36, kToolbarH = 76, kStatusH = 22, kBtn = 24, kStarW = 22, kTimeW = 58, kIndexW = 26;
 constexpr int kRowPad = 8, kContentMaxH = 18;   // kContentMaxH = 单行高度上限（标注行已随 C11 取消，无 kLabelH）
 constexpr UINT kBorderGrayHex = 0xC9CFD8, kInkGrayHex = 0x272C36;  // D2D 与气泡 GDI 两条路径共用
+// v2.1.0 新增（仍在同一文件，仍是唯一来源）
+constexpr int kTitleIconDip = 18, kTitleIconGap = 6;        // 标题栏应用图标边长 / 与模式文字的间隔
+constexpr int kSearchClearDip = 16, kSearchClearInset = 6;  // 搜索框右端清除叉号边长 / 距右内缘
+constexpr int kTipOffsetChars = 3;   // 气泡相对条目左缘右移的全角字数（字宽运行期实测）
+inline constexpr wchar_t kProjectUrl[] = L"…github.com/mylxnet/SuperClip-C";  // 署名单击目标
 }
 ```
 
@@ -84,7 +89,7 @@ ui/  ──▶ core/ ──▶ services/ ──▶ native/ ──▶ Win32/D2D/D
 | `src/ui/Widgets.h/.cpp` | `EDIT`（占位自绘）、自绘按钮/菜单（步骤 9+ 才建，气泡已落 `HoverTip`） | 180 |
 | `src/ui/HelpWindow.h/.cpp` | 9 步模态引导 | 150 |
 | `src/res/app.rc`、`manifest.xml` | 图标、`VERSIONINFO`、DPI/comctl6 | 90 |
-| `tests/*` | 单测：40 例（§9.2/9.3/9.4/9.6；§9.1 的"33 例/Catch2"是步骤 10 前的旧口径，见下方备注） | 706 |
+| `tests/*` | 单测：41 例（§9.2/9.3/9.4/9.6；§9.1 的"33 例/Catch2"是步骤 10 前的旧口径，见下方备注） | 706 |
 
 合计约 **4600 行**（.NET 版约 2000 行），差异集中在 `ui/`。
 
@@ -138,6 +143,7 @@ public:
   size_t ClearAll();  void Reset();   // ClearAll 只清非收藏区（C12），返回删除条数
   void SetFilter(FilterType);  void ApplySearch(std::wstring kw);  // UI 已防抖
   void Select(const ClipItem*);              // 所有模式同步选中（原 SelectItem）
+  void   AnchorQuickSelection();             // C14：Quick 下把选中位钉到 display_.front()，普通模式空操作
   std::function<void(const StoreEvent&)> onEvent;
 
   const std::vector<const ClipItem*>& Display() const;
@@ -163,6 +169,7 @@ private:
 | 淘汰 | 删除**非收藏区末尾**超额项（`erase(end()-excess, end())`） | **C7 末位淘汰** |
 | 重排 | `std::stable_partition(begin,end,isFavorite)` | FR-08 |
 | 复位 | 清全部 `isPasted`；两次 `stable_sort`（收藏按 `createdUtc` 降序、非收藏同样降序，稳定 → 同刻保持原序） | FR-14 / C5 |
+| 快速模式选中位 | `RebuildDisplay()` 末尾（以及 `TogglePasteMode`、点选绑定完成回调）调 `AnchorQuickSelection()`：Quick 且显示区非空时把 `selected_` 钉为 `display_.front()`，已是首行则不发事件；**普通模式空操作** | **C14**（2026-10-05 用户决议）/ FR-10 |
 
 **C8 补充说明**（原文未覆盖）：快速模式沉底若对收藏项执行"移到 vector 末尾"，会破坏 `[收藏区 | 非收藏区]` 不变式（收藏项落到非收藏区之后）。故收藏项的沉底目标是**收藏区末尾**，既保持"沉到本分区最旧位"，又维持分区结构。
 
@@ -193,7 +200,7 @@ DoPaste(item, moveToEnd):
   PasteService.Start(owner=mainWnd, target=GetPasteTarget(), item.content)
     stage=Write →  stage=WaitForeground（60ms 定时器）  →  stage=SendKeys（SendInput 4 事件）  →  stage=Idle
   收到 WM_APP_PASTE_DONE：
-    Store.PasteDone(item, moveToEnd)         // 灰显 + 沉底(C8) + 快速模式选中跳下一条未粘贴
+    Store.PasteDone(item, moveToEnd)         // 灰显 + 沉底(C8)；沉底后选中位回第一行＝下一条未粘贴(C14)
     SetTimer(kPasteGuardMs, ID_PASTE_GUARD)  // 兜底清标志
 ```
 
@@ -401,7 +408,7 @@ if (GetLastError() == ERROR_ALREADY_EXISTS) { ActivateExisting(); return 0; }
 
 | 消息 | 处理 |
 |---|---|
-| `WM_CREATE` | 存 `this` 到 `GWLP_USERDATA`；建 `EDIT` 子窗（`EM_SETCUEBANNER(L"搜索…", TRUE)`、`WM_SETFONT`）；建 D2D/DWrite 资源；按 settings 或默认停靠 |
+| `WM_CREATE` | 存 `this` 到 `GWLP_USERDATA`；建 `EDIT` 子窗（子类化 `EditProc`：占位文字/清除叉号自绘、`EM_SETMARGINS`、回车回投 —— §6.8；`WM_SETFONT`）；建 D2D/DWrite 资源；按 settings 或默认停靠 |
 | `WM_SIZE` | `renderTarget_->Resize`；重排 `EDIT`/按钮几何；`ListRenderer::Rebuild`；`InvalidateRect(NULL)` |
 | `WM_DPICHANGED` | 采纳 `lParam` 建议矩形 `SetWindowPos`；`SetDpi`；重测所有 `TextLayout`；`Proposed` 与 settings 冲突时以 `LPARAM` 为准 |
 | `WM_DISPLAYCHANGE` `WM_WTSSESSION_CHANGE` | 校验窗口是否仍在某显示器内（否则回默认停靠）；锁屏时 `picker.Cancel()` |
@@ -421,9 +428,10 @@ if (GetLastError() == ERROR_ALREADY_EXISTS) { ActivateExisting(); return 0; }
 | `WM_APP_SEARCH_ENTER` | `EDIT` 子类窗回投：回车把按键归属交回列表（`focusOwner=List`+`SetFocus(主窗)`） |
 | `WM_APP_PASTE_DONE` | `PasteService` 结果回投 → `OnPasteDone(ok)`：`ok` 才 `Store::PasteDone`（灰显/沉底/连贴跳转），随后 `ArmPasteGuard()` 起 1000ms 兜底 |
 | `WM_APP_PICK_DONE` | `LlHook` 回投根窗口句柄 → `ProcessPicker::OnPickMessage()`：进程名解析与绑定态写入都在主线程（步骤 9） |
+| `WM_APP_RAISE_TOPMOST` | C13 兜底（v2.1.1）：`topmost_` 为真但 `WS_EX_TOPMOST` 位不在时补发一次 `SetWindowPos(HWND_TOPMOST, NOMOVE|NOSIZE|NOACTIVATE)`。由 `WM_ACTIVATE` 投递 |
 | `WM_WTSSESSION_CHANGE` | 值 0x02B1；`WM_CREATE` 里 `WTSRegisterSessionNotification(NOTIFY_FOR_THIS_SESSION)` 才收得到。`wParam==WTS_SESSION_LOCK` 且正在点选 → 走同一条 `Cancel()`，光标绝不残留（步骤 9） |
 | `WM_ENDSESSION` | 注销/关机：正在点选同样 `Cancel()`，随后 §7.2 清理链 |
-| `WM_ACTIVATE` | 失活且非点选/菜单期间 → 不做处理（`_lastExternalWindow` 在唤起前记录，更可靠） |
+| `WM_ACTIVATE` | 失活且非点选/菜单期间 → 不做处理（`_lastExternalWindow` 在唤起前记录，更可靠）。**激活**（`LOWORD!=WA_INACTIVE`）且 `topmost_` 为真而 `WS_EX_TOPMOST` 位缺失 → `PostMessageW(WM_APP_RAISE_TOPMOST)`：本窗不在前台时系统会丢掉置顶带变更（v2.1.1 实机坐实），而**不能在这条消息里直接改 z-order**（系统处理完 `WM_ACTIVATE` 还会再动一次，同 `PasteTarget.cpp:76` 记过的坑），所以延后一条消息 |
 | `WM_CLOSE` | → `AppContext.Exit()`（标题栏 ✕ 即彻底退出，FR-15③） |
 | `WM_DESTROY` | `PostQuitMessage(0)` |
 
@@ -432,12 +440,17 @@ Monitor / Tray 窗口只处理各自 2–3 条消息（§5.1、§5.4），其余
 ### 6.2 命中区域模型
 
 ```cpp
-enum class HitZone { None, ModeText, BtnMinimize, BtnTopmost, BtnClose,
+enum class HitZone { None, ModeText, BtnMinimize, BtnTopmost, BtnClose, BtnSignature,
                      SearchBox, BtnFilter, BtnClear, BtnReset, BtnPick,
-                     RowBody, RowStar, ListBackground };
+                     RowBody, RowStar, ListBackground, Status };
 struct HitResult { HitZone zone; const ClipItem* item = nullptr; size_t displayIndex = 0; };
 ```
 `RowBody` 与 `RowStar` 在 `ListRenderer::rows_` 中预存矩形（数据变更时重建，每帧不重算）；命中顺序：先按钮与标题栏，再列表可见行。
+
+**状态栏带要最先吃掉（v2.1.0 修复）**：`y > ClientH()-kStatusF` 时直接判定为 `BtnSignature`（落在署名矩形内）或 `Status`，
+**不再往下算 `contentY`**。原来的缺陷正是这条：列表视口只画到 `ClientH()-kStatusF`，但命中仍按 `contentY` 反算行号，
+落在底栏的点击就落到最下面那条上——用户点 `by Mr lin` 结果改了下面条目的收藏。`WM_LBUTTONUP` 里 `Status` 显式 `break`（什么都不做），
+`BtnSignature` 调 `OpenProjectPage()`（AC-8 边界裁决见 DESIGN.md §1.2）。
 
 ### 6.3 定时器总表
 
@@ -467,6 +480,9 @@ rowPitch   = cardHeight + kRowGap                            // 卡片间留白
 - 缓存：`unordered_map<const ClipItem*, LayoutCache{ComPtr<IDWriteTextLayout> preview, previewH, truncated}>`，随 `StoreEvent::ItemRemoved`/`FullReplaced` 失效；**内容宽度变化（窗口缩放）时整体清空**——截断点与旧行宽绑定，沿用会提前截断或溢出列；上限 512 条，超限整体清空（正常不触发）。
 - 序号（FR-17）= `displayIndex+1`，绘制期取，不用静态索引（集合重建后仍正确）。
 - **悬浮全文（`HoverTip`）**：`Row::truncated` 为真的行，鼠标停留 `kHoverTipMs` 后由 `WM_TIMER(ID_HOVER_TIP)` 触发，把行卡片客户区矩形换算成屏幕物理像素交给气泡；气泡自绘（GDI `DrawTextW` + `DT_CALCRECT` 量尺寸，超 `kTipMaxH` 再二分前缀），不引 comctl32。滚轮/数据变化/尺寸/DPI 变化/点击/鼠标离开即刻收起并重新武装计时。
+- **气泡落点（v2.1.0 用户指定）**：改到**该条目上方**、并右移 `kTipOffsetChars = 3` 个字符宽度（字宽用 `GetTextExtentPoint32W(dc, L"中", 1)` 现场量，随系统字体与 DPI 走，不写死像素）。锚点：`x = rowScreen.left + 3×字宽`、`y = rowScreen.top - gap - 气泡高`；上方放不下（越过工作区顶）时翻到行下方并按工作区底夹紧。类名 `SuperClipHoverTip`、窗口标题为空串，QA 只能按类名找窗。
+- **选中行滚入视口（v2.1.0 C14 配套）**：`MainWindow::ScrollSelectionIntoView()`——快速模式下 `OnStoreChanged` 之后把选中行滚进来（`row->card.top < scrollY_` 上翻，`bottom > scrollY_+viewH` 下翻，随后 `ClampScroll`）。不补这一步，钉到第一行的动作在列表已往下滚时会把高亮留在视口外，用户看到"没选中任何东西"。
+- **置顶要"请求 + 断言"两次（v2.1.1，C13 实机订正）**：`Create()` 里 `ShowWindow`+`UpdateWindow` 之后再补一次 `SetWindowPos(topmost_ ? HWND_TOPMOST : HWND_NOTOPMOST, NOMOVE|NOSIZE|NOACTIVATE)`；`WM_ACTIVATE` 里若被激活且位仍缺失，`PostMessageW(WM_APP_RAISE_TOPMOST)` 延后补发。根因见 `doc/PROJECT_STATE.md` §4 坑 #12：**本窗不在前台时系统静默丢弃置顶带变更**（返回 TRUE、`gle=0`、位不落），重试与延时都无效。QA 判据因此只读 `GWL_EXSTYLE & WS_EX_TOPMOST`，不读 API 返回值。
 
 - **实现注（步骤 10 前置的四处 UI 决议，2026-10-04）**：① `Row::star` = `Rect(starLeft, rowTop, kStarW, cardHeight)`，整列都是命中区（比原来的 22×22 角标好点），字形矩形按 `(列高 - kStarW)/2` 下移后绘制；`Row::favorite` 字段与"收藏区/普通区分隔线"随 C10 一并删除（`Theme::Separator`/`kSeparatorHex` 已无使用者，删）。② 来源标注 `kLabelHex` 由 `0x1E88E5` 改浅为 `0x5B9BD5`，并新增 `labelPasted_`（`BlendOver(label, card, kPastedAlpha)`）——原先灰显行的标注仍是满色，比正文还抢眼。**该决议已于同日 C11 推翻：标注整体不再上屏，这两个画刷与 `fmtLabel_`/`kLabelH`/`kFontLabel` 一并删除，只留下方的搜索命中。**③ 收藏过滤规则落在 `Store::RebuildDisplay()` 的**第一行**（`filter_ != Favorite && item.isFavorite → continue`），数组分区不变式与 `Boundary()`/`EnforceLimit()`/`MoveToBack` 一律不动；集合原始顺序改由新增的 `Store::Collection()` 观测（单测用它断言分区不变式，`Display()` 只用于断言视图规则，见 §9.4-13）。④ C11 的删除范围只在绘制侧：`ListRenderer::Measure()` 不再建标注 layout、`Rebuild()` 的 `cardH` 去掉 `labelH` 项、`Draw()` 去掉那一次 `DrawTextLayout`；`ClipItem::SourceLabel()`、`foldLabel`、`RebuildDisplay()` 里 `ContainsFolded(item.foldLabel, …)` 与 `SourceRow/SourceCol` 的读写全部保留（用户补充口径："不显示，但仍参与搜索"）。
 
@@ -484,7 +500,9 @@ rowPitch   = cardHeight + kRowGap                            // 卡片间留白
 - **描边锐利**：1px 线与矩形在 `D2D1_ANTIALIAS_MODE_ALIASED` 下绘制，坐标对齐 `+0.5f`；圆角卡片用 `FillRoundedRectangle`（`radiusX/Y=6` 缩放值）。
 - **文本**：`D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE`；灰显**不用** `PushLayer`（会强制灰度 AA），改为预混合：`blend(fg, bg, 0.55)` = `bg + (fg-bg)*0.55` 逐通道，缓存 5 组颜色（normal/muted/pastedLabel/…）。
 - **高对比度**：`SPI_GETHIGHCONTRAST` 开启时 → 底色/前景/描边取 `GetSysColor(COLOR_WINDOW/BTEXT/WINDOWFRAME/HIGHLIGHT)`，取消预混合灰显（改纯灰字），保留描边加粗 1px。
-- **几何图标**（不用字形）：收起 = 向下折线 + 底线；悬浮 = 图钉（圆 + 针）；关闭 = 两条对角线；靶心 = 同心两圆 + 十字。每个 `ID2D1PathGeometry` 建一次复用；按钮 hover 加浅色圆底。★/☆ 用字形（雅黑含该字符）。
+- **几何图标**（不用字形）：收起 = 向下折线 + 底线；悬浮 = **斜图钉**（针头圆偏左上 + 45° 针身 + 底部短横杠；未置顶灰描边，置顶填 accent 色并在下方加 accent 下划线，v2.1.0 改形，见 DESIGN.md §5.2）；关闭 = 两条对角线；靶心 = 同心两圆 + 十字。每个 `ID2D1PathGeometry` 建一次复用；按钮 hover 加浅色圆底。★/☆ 用字形（雅黑含该字符）。
+- **标题栏应用图标**（v2.1.0）：唯一走位图的路径——`LoadImageW(IMAGE_ICON, px, LR_SHARED)` 取按 DPI 选档的 HICON，`GetIconInfo`+`GetDIBits` 拷出预乘 BGRA，`ID2D1RenderTarget::CreateBitmap` 建 `ID2D1Bitmap`，`DrawBitmap` 进 18×18 DIP 框（1:1 设备像素，不重采样）。位图属**目标级**资源：设备丢失时随 `rt_` 一起弃（`ReleaseTargetLevel()`），DPI 变了重取（`titleIconDpi_` 记账）。`LR_SHARED` 的句柄归系统缓存，**不得 `DestroyIcon`**。取不到像素就只画文字并写一条 warn，不影响其他绘制。
+- **状态栏署名可点**（v2.1.0）：`by Mr lin` 单击 → `ShellExecuteW("open", kProjectUrl)`；可点矩形宽度用 `IDWriteFactory::CreateTextLayout` 实测（mingw 的 `ID2D1RenderTarget` 没有 `CreateTextLayout` 包装，测量必须走工厂）。
 - **绑定状态色**：靶心红 `#E53935` = 未绑定，绿 `#43A047` = 已绑定（校验 `IsWindow` 后才绿，R5）。
 
 ### 6.7 焦点与输入归属
@@ -501,11 +519,13 @@ enum class FocusOwner { List, SearchEdit };   // EDIT 获焦经 EN_SETFOCUS/EN_K
 
 | 控件 | 实现 | 备注 |
 |---|---|---|
-| 搜索框 | 真 `EDIT`（`WS_CHILD\|WS_VISIBLE\|ES_AUTOHSCROLL\|WS_BORDER`） | IME 完好；占位用 `EM_SETCUEBANNER`（manifest 需 comctl32 v6）；`WM_CTLCOLOR*` 父窗返回白底画刷 |
+| 搜索框 | 真 `EDIT`（`WS_CHILD\|WS_VISIBLE\|ES_AUTOHSCROLL\|WS_BORDER`） | IME 完好；占位文字与**清除叉号都在 `EditProc` 的 `WM_PAINT` 自绘**（`EDIT` 永远盖在父窗之上，父窗画的会被文字盖掉；原记 `EM_SETCUEBANNER` 与落码不符，2026-10-05 订正）；框内有字时右端出现 ✕（16 DIP、距右内缘 6 DIP），`EM_SETMARGINS(EC_RIGHTMARGIN)` 给文字留出叉号位，`WM_LBUTTONUP` 命中叉 → `SetWindowTextW(L"")` 清空，之后由原生 `EN_CHANGE` 接 300ms 防抖；`WM_SETCURSOR` 在叉区换手型；`WM_CTLCOLOR*` 父窗返回白底画刷 |
 | 筛选 | 自绘 `全部▾` 按钮 + `TrackPopupMenuEx` 四项 + 当前项打勾 | 免 `COMBOBOX` 主题割裂（ADR）。按钮文字随当前值变（`全部/文本/表格/收藏 ▾`，按钮宽 60 逻辑px 放不下"表格单元格"，菜单项用全称）；主窗是 `WS_POPUP` 非激活窗，弹出前 `SetForegroundWindow`、返回后 `PostMessage(WM_NULL)`，否则点窗口外菜单不消失 |
 | 清除/复位/靶心/标题栏按钮 | 全自绘 + `HitZone` | 无子 HWND，减少 NC 处理。**清除**（2026-10-04 C12）只删非收藏区、无确认框，删完在状态栏给 3s 提示"已清除 N 条，收藏 M 条永久保留"（复用 `ID_STATUS_HINT`）——收藏在【全部】视图本就不可见，不提示会看起来按了没反应 |
 | 置顶 | `MainWindow::topmost_` **默认 true**，`DockToWorkArea` 启动即 `HWND_TOPMOST`；★ 按钮切 `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`，开启态在图标下画青色下划线 | 2026-10-04 用户指定"应用打开默认浮于各窗口最上层"（原 `false` 是步骤 8 遗留）。`Topmost` 落盘要等步骤 10 `SettingsService`，本轮固定"每次启动都开" |
 | 列表 | 全自绘 | 无 UIA（N1） |
+| 标题栏应用图标 | `ID2D1Bitmap`（GDI 取像素） | v2.1.0；纯装饰、不参与 `HitZone`，模式文字起点因此改为 `kModeLeft = kPad + 18 + 6`，绘制与命中同用一个常量 |
+| 状态栏署名 `by Mr lin` | 自绘文字 + `HitZone::BtnSignature` | v2.1.0 起单击 `ShellExecuteW("open", kProjectUrl)`；矩形按 DWrite 实度量宽，右侧贴 `ClientW()-kPad`。底栏其余区域是 `Status`，命中即吞掉、不改任何状态（见 §6.2） |
 | 主窗右键菜单 | `MainWindow::ShowMainMenu()`：`CreatePopupMenu` 三项（粘贴模式 / 复制模式 / 使用帮助）+ `TrackPopupMenuEx(TPM_RETURNCMD\|TPM_LEFTALIGN\|TPM_TOPALIGN)` | 步骤 11（2026-10-04）。**严格三项**是用户裁定：置顶已有标题栏 ★，清除/复位带确认链、误触代价与开关不对等，不进菜单。项文字按当前状态生成并写明点击后果（"粘贴模式：普通（点此切到快速）"），取消即零改动。与筛选菜单同一套 `SetForegroundWindow` 前置 + `PostMessage(WM_NULL)` 收尾（主窗是 `WS_POPUP` 非激活窗）。复制模式点击后 `SaveCopyMode()` 即落盘（§8.3） |
 | 帮助窗 | 独立无边框 `WS_POPUP`（`WS_EX_TOOLWINDOW\|TOPMOST`、owner=主窗），D2D 绘制 9 步 + 上一步/下一步/关闭按钮 | 入口：右键菜单「使用帮助」。420×300 逻辑px，贴主窗**左侧**（放不下回落右侧/居中，再 `FitRectToDesktop`）。模态用 `EnableWindow(主窗, FALSE)`，**不起嵌套消息循环**；首末位钳住且按钮禁用，重开回 `1 / 9`；`Esc`/关闭 还原主窗并 `SetFocus`。步骤 11 实机已验翻页（鼠标与 `VK_RIGHT`）、钳位、模态、还原；DPI 150%/200% 排版未验 |
 
@@ -575,7 +595,7 @@ ProcessPicker.Cancel()（卸钩子 + SPI_SETCURSORS）
 ### 9.1 结构与构建
 `tests/test_main.cpp` 自带极简断言器（`CHECK/CHECK_EQ` + 计数汇总），**不引 Catch2 也不引任何第三方**（守住 §1.1 的零依赖红线）；目标 `sc_tests`（`add_executable(sc_tests ...)`，不链 d2d/dwrite）。被测范围：`core/` 全部纯函数 + `Store`（`StorageService` 以临时目录注入）。`ui/` 不写单测（无头环境不可行）→ §9.5 手测脚本。
 
-> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **40 例 / 214 断言 / 0 失败**。
+> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **41 例 / 222 断言 / 0 失败**。
 
 ### 9.2 TableParser（13 例，对齐原 §12）
 | # | 输入 | 断言 |
@@ -707,6 +727,8 @@ DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（
 | 10 | `SettingsService` + 位置/模式恢复 | 重启后位置、模式、置顶、绑定进程名恢复；拔掉副显示器回默认停靠。**2026-10-04 实机结论**：§9.6 四例绿（40 例/214 断言/0 失败）；`Left100/Top120/400×520` 精确还原并原值回写；`Left9000/Top7000` 回默认停靠 `1540,216`；无文件首启＝右停靠+`topmost=True`+普通模式+全部+未绑定，退出时才建默认文件；唯一候选恢复绑定（日志+绿靶心+"已绑定：PasteTarget"）；同名两窗一律不绑（红靶心+状态栏提示）；★ 关→`WS_EX_TOPMOST` 位消失且**立即**落盘→重启仍关→可开回；点模式文字→`PasteMode` 立即落盘。**未验证**：筛选经模态菜单变更后的 `FilterType` 落盘；`SplitSingleColumn` 无 UI 入口 |
 | 11 | `HelpWindow` + 右键菜单 + 气泡 | 9 步引导可翻页；菜单项文案动态显示当前模式。**2026-10-04 实机结论**：三项菜单在鼠标右键与 `VK_APPS`（锚列表区左上）两路都能弹出，4 项含分隔线、文字随状态翻转（"粘贴模式：普通（点此切到快速）"）；选「粘贴模式」`PasteMode` 0→1→0 落盘、选「复制模式」`SplitSingleColumn` false→true 落盘、取消零改动；帮助窗在主窗左侧 12 逻辑px、420×300、`enabled=False` 证明模态、点「下一步」与 `VK_RIGHT` 均可翻页、`1/9` 与 `9/9` 钳住且按钮禁用、重开回 `1/9`、`Esc` 与「关闭」都还原主窗；搜索框内右键仍是原生 `EDIT` 菜单（15 项）；主窗无回归。**未验证**：① 点选期间不弹菜单——代码有分支，但驱动无法在盲态安全右键（会点到别家窗口），未跑；② `Shift+F10` 按决议不实现；③ 帮助窗 150%/200% DPI 排版（挂步骤 6 遗留）；④ `true→false` 的反向落盘未单独复验 |
 | 12 | 打包脚本 + 干净 VM 验收 | AC-7/8；`dumpbin /dependents` 仅 §附录白名单 DLL |
+| 12 之后 | **v2.1.0**：五项界面修订 + C14 快速模式选中位钉第一行 | 交叉构建 error 0、§9.4 增至 16 例（合计 41 例/222 断言/0 失败）。**2026-10-05 17:01–17:07 实机走查通过**（合成数据、每次点击前 `WindowFromPoint`→`GA_ROOTOWNER` 守卫、`GUARD_FAILS=0`）：图标渲染、图钉两态与 `topmost` True→False→True、✕ 出现/清空、点底栏空白收藏数不变（2→2）、点署名后前台窗标题变 `mylxnet/SuperClip-C`、气泡 `tip_left-win_left=51px` 在行之上；C14 两轮靶窗 dump 各含本轮 token。逐条判据见 `doc/TESTING.md` §2 与 `doc/PROJECT_STATE.md` §6 |
+| 12 之后 | **v2.1.1**：C13 置顶兜底（修"启动即置顶"在真实桌面不生效） | 交叉构建 error 0、41 例/222 断言/0 失败、`FileVersion=2.1.1.0`。实机：修复后连续两次冷启动（含让前台给靶窗那次）`WS_EX_TOPMOST` 位为 1；`WM_ACTIVATE` 兜底分支一次都没被执行过（再没能复现出"丢带"的起始态）→ 标**未验证** |
 
 判据纪律：每步完成后只报"已验证项 + 未验证项"，未实机验证的 UI/粘贴行为一律标注**未验证**，不得凭代码推断宣称通过。
 

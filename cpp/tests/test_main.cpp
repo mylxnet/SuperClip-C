@@ -230,7 +230,7 @@ void L08_TableCellWithoutRowCol() {
   CHECK_EQ(item->SourceLabel(), L"");
 }
 
-// ============ §9.4 Store 不变式（15 例）============
+// ============ §9.4 Store 不变式（16 例）============
 
 void S01_DedupMigratesFavorite() {
   TempStore tmp("s01");
@@ -544,6 +544,29 @@ void S15_ClearAllKeepsFavorites() {
   CHECK_EQ(reloaded.Collection().size(), 2u);
 }
 
+void S16_QuickModeAnchorsSelectionToFirstRow() {          // 2026-10-05 用户决议：复制后直接空格即贴最新一条
+  TempStore tmp("s16");
+  sc::Store store(tmp.storage());
+  store.AddFromClipboard(L"old");
+  CHECK(store.Selected() == nullptr);                                   // 普通模式：入列不钉选中位
+  store.SetPasteMode(sc::PasteMode::Quick);
+  store.AddFromClipboard(L"new");                                       // 入列即钉到第一行
+  CHECK_EQ(store.Selected()->content, L"new");
+  store.AddFromClipboard(L"newest");                                    // 再复制 → 选中位跟着走
+  CHECK_EQ(store.Selected()->content, L"newest");
+  store.Select(store.Display()[2]);                                     // 模拟单击别的行（视图 newest new old）
+  CHECK_EQ(store.Selected()->content, L"old");
+  store.PasteDone(store.Selected(), true);                              // 空格粘完 → 沉底 → 回到第一行
+  CHECK_EQ(store.Selected()->content, L"newest");
+  store.ApplySearch(L"old");                                            // 过滤后钉到匹配区第一行
+  CHECK_EQ(store.Selected()->content, L"old");
+  store.ApplySearch(L"");                                               // 清掉关键字 → 又钉回第一行
+  CHECK_EQ(store.Selected()->content, L"newest");
+  store.SetPasteMode(sc::PasteMode::Normal);                            // 切回普通：选中位不再被挪
+  store.AddFromClipboard(L"third");
+  CHECK_EQ(store.Selected()->content, L"newest");
+}
+
 // ============ §9.6 Settings（4 例）============
 // settings.json 与 .NET v2.0.2 互换读写的硬要求：键名、键序、null 语义都得逐字节对齐。
 std::string ReadAllBytes(const std::wstring& path) {
@@ -654,7 +677,7 @@ void G04_OutOfRangeAndWrongTypePerField() {
 }  // namespace
 
 int main() {
-  std::printf("SuperClip C++ 逻辑层单测（40 例）\n");
+  std::printf("SuperClip C++ 逻辑层单测（41 例）\n");
 
   Run("§9.2-01 单行两列", T01_SingleRowTwoCols);
   Run("§9.2-02 两行两列", T02_TwoRows);
@@ -694,13 +717,14 @@ int main() {
   Run("§9.4-13 收藏仅在【收藏】视图显示", S13_FavoritesOnlyInFavoriteView);
   Run("§9.4-14 来源标注不上屏仍参与搜索", S14_SourceLabelSearchableWhileHidden);
   Run("§9.4-15 清除保留收藏（C12）", S15_ClearAllKeepsFavorites);
+  Run("§9.4-16 快速模式选中位钉第一行", S16_QuickModeAnchorsSelectionToFirstRow);
 
   Run("§9.6-01 .NET 文件读入并逐字节写回", G01_DotNetFileReadsAndWritesBackIdentical);
   Run("§9.6-02 全字段往返（含绑定进程名）", G02_RoundTripWithBinding);
   Run("§9.6-03 缺失/损坏回落默认", G03_MissingOrCorruptFallsBackToDefaults);
   Run("§9.6-04 越界与类型不符按字段作废", G04_OutOfRangeAndWrongTypePerField);
 
-  std::printf("\n用例 40，断言 %d 项，失败 %d 项 → %s\n", g_checks, g_failures,
+  std::printf("\n用例 41，断言 %d 项，失败 %d 项 → %s\n", g_checks, g_failures,
               g_failures == 0 ? "全部通过" : "存在失败");
   return g_failures == 0 ? 0 : 1;
 }

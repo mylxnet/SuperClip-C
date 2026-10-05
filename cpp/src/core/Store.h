@@ -35,6 +35,9 @@ class Store {
   void SetFilter(FilterType filter);
   void ApplySearch(std::wstring keyword);      // UI 侧已做 300ms 防抖
   void Select(const ClipItem* item);
+  // C14（2026-10-05 用户决议）：快速模式把选中位钉到显示区第一行（复制/绑定/过滤后无需先点条目，空格即贴最新那条）。
+  // 普通模式调用它什么都不做。列表重排末尾会自动调一次；绑定完成那一路由 AppContext 显式调用。
+  void AnchorQuickSelection();
   void SaveToDisk();                           // 退出链用（变更时已自动保存）
   void SetCopyMode(CopyMode mode) { copyMode_ = mode; }
   void SetPasteMode(PasteMode mode) { pasteMode_ = mode; }
