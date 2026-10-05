@@ -3,7 +3,7 @@
 #include <cstddef>
 
 // SuperClip C++ · 全局常量唯一来源（禁止在别处写魔数）
-// 依据：C++_技术方案.md §1.1
+// 依据：doc/PROJECT.md §1.1
 namespace sc {
 
 constexpr int    kMaxItems            = 500;      // FR-04 非收藏上限

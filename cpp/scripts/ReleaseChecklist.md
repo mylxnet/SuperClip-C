@@ -23,7 +23,7 @@ WTSAPI32.dll  bcrypt.dll  d2d1.dll  ole32.dll  msvcrt.dll
 | `dwmapi` / `shcore` **不在导入表** | 设计如此：`SystemInfo.cpp` 走运行期 `LoadLibraryW + GetProcAddress`（Win7 缺失即回退），本就不该进导入表；A.4 把 `dwmapi` 列进"固定链接库"与实现的动态加载方式不一致，属文档口径问题 |
 | **`WTSAPI32.dll` 不在 §1.2 / A.4 白名单里** | 代码必须链它（§6.1 的 `WTSRegisterSessionNotification`，锁屏取消点选靠这条）。**这是两份 C++ 文档白名单的缺漏**，未经你授权我没动文档 |
 | `objdump -p` 里那行 `Entry e 0000000000000000 0000000000000000 CLR Runtime Header` | objdump 对**每个** PE 都会打印这行数据目录，RVA 与 size 均为 0 = 空目录项，**不是** CLR/.NET 引用 |
-| exe 体积 3 507 020 B ≈ **3.34 MB**，超 §10.3 的 ≤3 MB 目标 | 这是未内嵌图标/manifest、未开 `/O2 /GL`、未做 MSVC 优化的交叉产物，**不能拿它宣称达标**，也不能拿它证伪 |
+| exe 体积 3 637 683 B ≈ **3.47 MB**（2026-10-05 图标内嵌后；图标接入前为 3 557 811 B），超 §10.3 的 ≤3 MB 目标 | 这是未开 `/O2 /GL`、未做 MSVC 优化的交叉产物，且 `.rsrc` 里带了 79 KB 的多尺寸图标，**不能拿它宣称达标**，也不能拿它证伪 |
 
 **结论**：依赖面方向正确、无网络与注册表符号；但这条证据链只覆盖"可编译可链接的 mingw 版"，发布结论必须由下面第 2 节重跑。
 
@@ -87,4 +87,6 @@ WTSAPI32.dll  bcrypt.dll  d2d1.dll  ole32.dll  msvcrt.dll
 **结论：`.bat`（以及任何被 cmd/PS 解码的脚本）内容一律 ASCII，中文只出现在 `.md` 与 C++ 源文件里。**
 这与 §一.1 冲突处已在文件头注释中标明例外理由。
 
-已知缺口（不影响脚本可用性，但影响"能不能真发版"）：仓库根目录**还没有 `CHANGELOG.md`**，`PackageRelease.bat` 对此只给 `[warn]` 并继续打包 —— 真要发版前必须先补上，那属于你往后推的文档整改。
+原「仓库根目录还没有 `CHANGELOG.md`」的缺口已于 2026-10-05 补齐（根目录 `CHANGELOG.md`，v2.0.3/v2.0.2 详细、
+更早版本指向 `doc/技术方案.md`），`PackageRelease.bat` 的 `[warn]` 分支保留作兜底。真发版仍卡在下面两件事：
+MSVC 工具链与干净 VM，也就是第 2、3 节那两张单，**都不是文档问题**。

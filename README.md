@@ -20,10 +20,19 @@ Windows 剪贴板历史管理工具。后台监听复制，保留最近条目，
 ## 仓库布局
 
 ```
-SuperClip_设计规范.html   需求契约（FR/AC 条目，v1.2）
-技术方案.md               .NET 旧版行为说明（其 §1 技术栈章节已作废）
-C++_设计方案.md           契约级设计：FR 映射、算法规范、文档矛盾取值 C1–C13、ADR
-C++_技术方案.md           实现级设计：文件清单、接口签名、消息路由表、测试方案、里程碑判据
+README.md               本文
+CHANGELOG.md            版本历史（v2.0.3 / v2.0.2 详细，更早指向 doc/技术方案.md）
+agent.md                工程规则（复述后动手、文档硬性、发布授权、每轮升版本号等）
+doc/
+  SuperClip_设计规范.html   需求契约（FR/AC 条目，v1.2）
+  技术方案.md               .NET 旧版行为说明（其 §1 技术栈章节已作废）
+  DESIGN.md             契约级设计：FR 映射、算法规范、文档矛盾取值 C1–C13、ADR
+  PROJECT.md            实现级设计：文件清单、接口签名、消息路由表、测试方案、里程碑判据
+  PROJECT_STATE.md      当前状态、环境搭建、命令、踩过的坑、架构决策的理由
+  TESTING.md            40 例逐条用例、覆盖缺口、实机走查轮次、数据防护规程
+  DEPLOY.md             部署与运维：安装/卸载/数据位置/接管 .NET 数据/故障排查
+  审计报告.md            第三方审计原始结论
+  审计核实与整改清单.md    逐条核实（成立/不成立）+ 整改档位与授权口径
 cpp/
   CMakeLists.txt          MSVC 主构建
   build.bat               一键构建（自动定位 VS2022 vcvars64）
@@ -63,7 +72,7 @@ MSVC 产物上用 `dumpbin /resources` 结案。
 
 - **纯逻辑单测**：40 例 / 214 断言（表格拆分、哈希与来源标注、Store 不变式、JSON、Settings 逐字段容错）。
   在 Windows 上运行 `sc_tests.exe`（依赖 BCrypt 与临时目录）。
-- **UI 与粘贴行为无法单测**，按 `C++_技术方案.md` §9.5 实机走查。`cpp/qa/` 下的脚本就是这套走查的驱动器：
+- **UI 与粘贴行为无法单测**，按 `doc/PROJECT.md` §9.5 实机走查。`cpp/qa/` 下的脚本就是这套走查的驱动器：
   `step7/step8/step9.ps1` 驱动采集、粘贴、点选绑定、右键菜单与帮助窗，`ui_shot.ps1`/`crop.ps1`/`sample.ps1` 负责截图与取色自证，
   `userdata.ps1` 备份还原 `%APPDATA%\SuperClip` 下的用户数据。
   脚本默认从同级上级目录 `cpp/build-mingw/` 取 exe，并把截图写回那里（已在 `.gitignore` 内）。
@@ -75,7 +84,7 @@ MSVC 产物上用 `dumpbin /resources` 结案。
 
 ## 当前状态
 
-M1 里程碑按 `C++_技术方案.md` §11 逐步实施，**步骤 1–11 已落地并实机走查**。仍未闭环的项：
+M1 里程碑按 `doc/PROJECT.md` §11 逐步实施，**步骤 1–11 已落地并实机走查**。仍未闭环的项：
 
 - 150% / 200% DPI 下的排版复核（需切换系统缩放）
 - 真实 Excel/WPS 表格复制闭环、真实注销/关机下的 `WM_ENDSESSION` 路径
