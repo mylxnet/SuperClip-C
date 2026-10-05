@@ -33,7 +33,9 @@ WTSAPI32.dll  bcrypt.dll  d2d1.dll  ole32.dll  msvcrt.dll
 - [ ] `dumpbin /imports build\Release\SuperClip.exe` → 同上，输出贴进发布记录（A.4 要求的结案证据）
 - [ ] `cl /W4` 零警告（mingw 侧只开了 `-Wall -Wextra`）
 - [ ] `__try/__except` 消息兜底路径实测（mingw 下该宏不可用）
-- [ ] `app.rc` 的 manifest + 图标内嵌生效（mingw 构建不编 `.rc`，见 `build-tests.sh` 注释）
+- [ ] `app.rc` 的 manifest + 图标内嵌生效。交叉构建（CMake + windres）已把 `.rc` 编进 `.rsrc`，
+      `Get-Item SuperClip.exe | % VersionInfo` 能读到 `FileVersion=2.0.2.0`；但图标仍未解（`app.rc:6` 注释态），
+      RT_MANIFEST 是否被 OS 实际加载要在 MSVC 产物上 `dumpbin /resources` 结案
 - [ ] exe 体积 ≤ 3 MB、启动到可交互 < 300 ms 的实测值
 - [ ] AC-7 / AC-8（第 3 节操作单）
 

@@ -3,7 +3,7 @@ project(SuperClip LANGUAGES CXX)
 
 # ============================================================
 # SuperClip C++ · M1（三窗口 + 消息循环 + 单实例 + 监听 + 热键 + 托盘 + 持久化）
-# 主工具链 = MSVC；MinGW 交叉仅用于编译/跑逻辑单测（见 build-tests.sh）
+# 主工具链 = MSVC；MinGW 交叉构建走同一份清单（`bash build-tests.sh`），用于跑逻辑单测与整程序链接检查
 # 技术方案 §10.1
 # ============================================================
 
@@ -64,11 +64,12 @@ if(MSVC)
   target_link_options(SuperClip PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:wWinMainCRTStartup
                       $<$<CONFIG:Release>:/LTCG>)
 else()
+  # -fno-strict-aliasing：沿用迁移前 build-tests.sh 的 codegen 假设；交叉构建改走 CMake 时一并保住，未单独验证其必要性
   target_compile_options(SuperClip PRIVATE -Wall -Wextra -Wno-unused-parameter
-                         -Wno-cast-function-type -U__STRICT_ANSI__)
+                         -Wno-cast-function-type -U__STRICT_ANSI__ -fno-strict-aliasing)
   target_link_options(SuperClip PRIVATE -municode -static)   # -static = 静态 CRT，免运行库
-  # windres 对 app.rc 内的相对资源路径解析与 RC.exe 不同：交叉构建只用于验证可编译，
-  # 正式发布（内嵌 manifest + 版本信息）走 MSVC/RC.exe
+  # 实测：windres 能编 src/res/app.rc（manifest + VERSIONINFO 进 .rsrc，Windows 侧读到 FileVersion 2.0.2.0）。
+  # 但 RC.exe 与 windres 对 RT_MANIFEST 的处理差异只能在 MSVC 产物上用 dumpbin /resources 结案，见步骤 12 B。
 endif()
 
 # uuid：SHGetKnownFolderPath 的 FOLDERID_* 定义（MSVC=uuid.lib，mingw=libuuid.a）
@@ -95,7 +96,7 @@ target_compile_definitions(sc_tests PRIVATE
 if(MSVC)
   target_compile_options(sc_tests PRIVATE /W4 /permissive- /utf-8 /EHsc)
 else()
-  target_compile_options(sc_tests PRIVATE -Wall -Wextra -U__STRICT_ANSI__)
+  target_compile_options(sc_tests PRIVATE -Wall -Wextra -U__STRICT_ANSI__ -fno-strict-aliasing)
 endif()
 target_link_libraries(sc_tests PRIVATE kernel32 ole32 oleaut32 bcrypt advapi32 user32 shell32)
 if(NOT MSVC)

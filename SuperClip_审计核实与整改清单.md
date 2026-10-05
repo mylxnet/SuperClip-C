@@ -3,7 +3,7 @@
 > 核实对象：`SuperClip_审计报告.md`（2026-10-05，第三方只读审计，非本人撰写）
 > 本文作者：本仓实施方（被审计方）
 > 用途：把外部审计逐条对码核实后的**事实基线 + 整改清单**固化，供 §11 步骤 12 B 段一并执行
-> 状态：**第 1、2 档（部分）与 `Sha256` 注释对齐已于 2026-10-05 落地并实机走查**，其余档位待授权/待环境。执行记录见 §6，走查记录见 §6.1。
+> 状态：**第 1、2 档（部分）与 `Sha256` 注释对齐已于 2026-10-05 落地并实机走查；第 3 档 #6（交叉构建走 CMake）同日落地**。其余档位待授权/待环境。执行记录见 §6，走查记录见 §6.1，CMake 单一清单见 §6.2。
 
 ---
 
@@ -31,7 +31,7 @@
 | `src/ui/HelpWindow.cpp` | 同上 | `SuperClip` |
 | `wtsapi32` | `CMakeLists.txt:72-74`（`target_link_libraries`） | `SuperClip`（`MainWindow.cpp:6` 引入、`:206` 调 `WTSRegisterSessionNotification`） |
 
-对照：`build-tests.sh:29-37` 的交叉链接行**含**这 4 个源与 `-lwtsapi32`，两份清单不一致。
+对照：`build-tests.sh:29-37` 的交叉链接行**含**这 4 个源与 `-lwtsapi32`，两份清单不一致。（这份手抄清单已在同日删除，见 §6.2。）
 
 ### 1.2 实测证据（2026-10-05，WSL `lxsyzd` / `x86_64-w64-mingw32-g++`）
 
@@ -46,6 +46,7 @@
 | E | `sc_tests`：CMake 的 9 个 `SC_COMMON_SOURCES` + `tests/test_main.cpp` 按 `CMakeLists.txt:95` 的库链接 | **失败，12 处 undefined**（`LoadSettings`/`SaveSettings`）；补 `Settings.cpp` 后通过 |
 
 **证据边界（务必如实转述）**：这证明的是"该输入集在任何链接器下都必断"，属于**同一根因、不同表现**——MSVC 会报 `LNK2019` 而非 `undefined reference`，但**无法据 mingw 通过就宣称 MSVC 出包可过**（还有 `RC.exe` 与 `windres` 对 `app.rc` 相对资源路径解析不一致这一处已知差异，交叉构建因此不含 `app.rc`）。MSVC 实测仍属步骤 12 B。
+> **同日更新（2026-10-05，见 §6.2）**：WSL 装上 `cmake` 3.22.1 后 `cmake --build` 已真实跑通，交叉构建也不再排除 `app.rc`——windres 编得动，`.rsrc` 里的 VERSIONINFO 能被 Windows 读到。上面这段"边界"现在只剩 **MSVC/`RC.exe` 的差异**与 `dumpbin` 结案两项。
 
 ---
 
@@ -115,7 +116,7 @@
 | # | 动作 | 文件 | 备注 |
 |---|---|---|---|
 | 5 | 附录 A.4"链接库固定"改为与实际一致：删 `dwmapi`（动态加载不入链），补 `advapi32`、`uuid`、`wtsapi32` | `C++_技术方案.md:761` | **改契约原文需单独授权** |
-| 6 | 交叉构建改走 CMake（`-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++`），消灭手抄清单；`app.rc` 的 windres 差异用 `if(MSVC)` 隔离 | `cpp/build-tests.sh`、`CMakeLists.txt:66-67` | 需 WSL 装 cmake，或改为在 Windows 侧配置 |
+| 6 | 交叉构建改走 CMake（`-DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++`），消灭手抄清单；`app.rc` 的 windres 差异用 `if(MSVC)` 隔离 | `cpp/build-tests.sh`、`CMakeLists.txt:66-67` | **已落地（2026-10-05）**：WSL 装 `cmake` 3.22.1，`build-tests.sh` 改为驱动 `cmake --build`，脚本内源/库清单全删；windres 实测能编 `app.rc`，无需 `if(MSVC)` 隔离。见 §6.2 |
 | 7 | JSON 选型 ADR 由 RapidJSON 改写为"自研极简 JSON"，删 §10.1 `:661` 的 RapidJSON/Catch2 表述 | 设计方案 `:46,54,394,452,545`、技术方案 `:661` | **改契约原文需单独授权** |
 
 ### 第 4 档 · 已推后的 agent.md 整改（用户明示"文档的事往后推"，此处仅登记不启动）
@@ -127,7 +128,7 @@
 - `favoriteCount_` 增量计数替代 `Boundary()`：n≤500 无实测瓶颈，为未确证的规模风险改动核心分区不变式，收益/风险不划算。
 - `Sha256` 失败"真拒绝入列"：BCrypt 属系统组件，失败时数据面已坏，新增分支无法构造测试场景。**改为删掉 `Sha256.cpp:38` 那句不符实的注释尾巴**（1 行，与行为对齐）。
 - `HitTest` 抽纯函数做单测（见 §2.4）。
-- Windows CI：依赖第 6 项先统一清单，否则 CI 只会重复 CMake 的假绿；且配置远端属发布类动作需触发词。
+- Windows CI：原阻塞理由（"两份清单漂移，CI 只会重复 CMake 的假绿"）随 §6.2 消失——现在 CI 跑 `cmake --build` 就是本地跑的同一条路径。仍不做的原因改为：配置远端工作流属发布类动作，需触发词授权；且 CI 上仍是 mingw 或 VS 镜像二选一，选哪个镜像要先定。
 
 ---
 
@@ -184,7 +185,7 @@ LINK_EXIT=0  UNDEFINED=0
 > 于是多报 2 处 undefined（`sc::HexSha256Utf8`）且 `scraped_files=20` —— 数字对不上先查正则，别改结论。
 
 同类旁证脚本本轮还跑了：补 4 个源后 `UNDEFINED=1`、再加 `-lwtsapi32` 后链接通过；`sc_tests` 侧 12→0。
-第 3 档第 6 项落地后，这条命令应由 `cmake --build` 取代。
+第 3 档第 6 项已落地，这条旁证命令的现役替代就是 `cd cpp && bash build-tests.sh`（内部即 `cmake --build`，见 §6.2）；命令本身保留在此，用于随时复现"缺项长什么样"。
 
 > 本文档为只读核实记录，未修改被审计代码。修动按 agent.md 约定逐项确认后执行。
 
@@ -198,7 +199,8 @@ LINK_EXIT=0  UNDEFINED=0
 | 第 1 档 #2 补库 | **已完成** | `target_link_libraries(SuperClip)` 末位 +`wtsapi32`（并加一行注释说明不链则 LNK2019） | 复现命令：`scraped_libs` 现含 `-lwtsapi32`，**`LINK_EXIT=0  UNDEFINED=0`**，产出 exe（-O0 目标文件 4,586,994 B） |
 | 第 2 档 #3 帮助窗文案 | **已完成（含实机走查 + 读图核对）** | `HelpWindow.cpp:30`「先用 ↑ ↓ 选中」→「单击选中一条」（与 ADR T6 对齐；新文案更短，不会增加换行） | 编译：`build-tests.sh --app` 通过、无新增告警。实机：右键菜单 → 帮助窗打开、翻到第 3 页、截图三张（页 1/2/3 md5 互异，证明确实翻页），并已读图逐字核对渲染文案，见 §6.1 |
 | 第 5 档 · `Sha256` 注释 | **已完成** | `Sha256.cpp:38` 改为如实描述："失败返回空串：调用方不额外拒绝，条目照常入列（去重此时按空串比对）" | 仅注释；`build-tests.sh --app` 通过 |
-| 回归 | **无回归** | —— | `build-tests.sh` → `sc_tests.exe` 在 Windows 实跑：**用例 40、断言 214、失败 0**；`build-tests.sh --app` → `SuperClip.exe` 编译通过（3,507,020 B） |
+| 第 3 档 #6 交叉构建走 CMake | **已完成**（详见 §6.2） | WSL 装 `cmake` 3.22.1；`build-tests.sh` 改为驱动 `cmake --build`，删除脚本内手抄的源/库清单与 `--app` 手工链接行；`CMakeLists.txt` 两处过时注释同步 | `CONFIGURE_RC=0`、`BUILD_RC=0`、error/undefined **0**、自有源 warning **0**；`sc_tests.exe` Windows 实跑 40/214/0；`objdump -p` 见 `WTSAPI32.dll` 入导入表；windres 编 `app.rc` 成功且 Windows 读到 `FileVersion 2.0.2.0` |
+| 回归 | **无回归** | —— | `build-tests.sh` → `sc_tests.exe` 在 Windows 实跑：**用例 40、断言 214、失败 0**；`build-tests.sh --app` → `SuperClip.exe` 编译通过（3,507,020 B）。〔该 `--app` 参数随后被 §6.2 的 CMake 单一清单构建取代〕 |
 
 ### 6.1 实机走查记录（2026-10-05，用户让出桌面约 60 秒）
 
@@ -266,5 +268,42 @@ superclip_still_running=0 pastetarget_still_running=0
 两条已写入项目记忆，后续走查的固定动作改为：还原前打印"live 与备份各自条目数 + 各自是否含本轮 token"，数不对就停下来问；
 清理时只删本轮自己新建的那个目录。
 
-**本轮未做（有意）**：第 2 档 #4 `CHANGELOG.md` 与第 4 档绑定（版本号/署名/图标同批）；第 3 档 #5 #7 需授权改两份契约原文，#6 需 WSL 装 `cmake`（当前该发行版只有 `make`）。
-**MSVC 侧仍属未验证**：本轮证据全部来自"同一组输入喂 mingw 链接器"，只证明缺项已补齐、不再产生未定义符号；`build.bat` 真实出包与 `dumpbin` 结案仍待步骤 12 B。
+**本轮未做（有意）**：第 2 档 #4 `CHANGELOG.md` 与第 4 档绑定（版本号/署名/图标同批）；第 3 档 #5 #7 需授权改两份契约原文。
+**MSVC 侧仍属未验证**：§1.2 的旁证与 §6.2 的真实 `cmake --build` 都是 mingw 工具链，只证明"清单已补齐、CMake 路径本身能配置能构建"；`build.bat`（MSVC）真实出包与 `dumpbin` 结案仍待步骤 12 B。
+
+### 6.2 第 3 档 #6 落地：交叉构建改走 CMake 单一清单（2026-10-05，同日追加）
+
+| 动作 | 结果 |
+|---|---|
+| WSL `lxsyzd` 装 `cmake` | `apt-get install -y cmake` → `APT_RC=0`，`cmake version 3.22.1`（此前只有 `make`，所以 §1.2 只能用旁证） |
+| `cpp/build-tests.sh` 重写 | 删掉脚本内手抄的 `SRC=(…)` 与 `LIBS=(…)` 和整条 `--app` 手工链接行；改为 `cmake -S . -B build-mingw/cmake` + `cmake --build`，再把两个 exe 拷到 `build-mingw/` 供 `cpp/qa/*.ps1` 取用。**源清单与库清单从此只有 `CMakeLists.txt` 一份** |
+| 真实 CMake 构建 | `CONFIGURE_RC=0`（`The CXX compiler identification is GNU 10.0.0`）、`BUILD_RC=0`；`error:`/`undefined reference`/`No rule to make` 合计 **0 行**；编译器 `warning:` **0 行**（日志里 6 行 `warning:` 全是 `gmake: Clock skew detected`）；`CMake Warning` **0** 条 |
+| 产物（冷构建，`CMAKE_BUILD_TYPE=Release` = `-O3 -DNDEBUG -fno-strict-aliasing`） | `SuperClip.exe` **3,556,680 B**、`sc_tests.exe` **3,276,987 B**；Windows 侧 `VersionInfo.FileVersion` 读到 **2.0.2.0** |
+| 单测（CMake 产物） | Windows 实跑 `build-mingw/sc_tests.exe`：**用例 40、断言 214、失败 0** |
+| 增量与幂等 | 第二次跑 `build-tests.sh` 用时 **5.06 s**，`[100%] Built target …` 两行，无重编风暴 |
+| 顺带保住的一处差异 | 旧脚本的 `-fno-strict-aliasing` 在 CMake 侧原本没有 → 已补进 `CMakeLists.txt` 两个非 MSVC 分支（沿用旧 codegen 假设，未单独验证其必要性；补它使体积 +1.5 KB） |
+| 顺带去掉的一处噪声 | 首跑有 `CMake Warning: Manually-specified variables were not used: CMAKE_C_COMPILER`（`project()` 只声明 CXX）→ 脚本不再传该变量，冷构建 `CMake Warning` 归零 |
+
+**`app.rc` 的 windres 差异实测为"不存在"**：构建日志有 `[ 97%] Building RC object CMakeFiles/SuperClip.dir/src/res/app.rc.res`，
+产物有 `.rsrc` 段（0xac8 字节），Windows 侧 `Get-Item SuperClip.exe | % VersionInfo` 读到
+`FileVersion=2.0.2.0  ProductVersion=2.0.2.0  Company=SuperClip`，`.rsrc` 内可见 manifest 的
+`<requestedExecutionLevel level="asInvoker"/>`、`dpiAware`、`compatibility` 段。
+→ 整改清单原写的"`if(MSVC)` 隔离 `app.rc`"**没有必要**，未做（这是对第 3 档 #6 登记动作的一处偏离，理由是上面的实测）。
+仍属未验证：RT_MANIFEST 是否被 OS 实际加载、与 `RC.exe` 产物的字节级差异 —— 归 `dumpbin /resources`（12 B）。
+
+**导入表实测**（`objdump -p SuperClip.exe | grep 'DLL Name'`，mingw 交叉构建、非发布产物）：
+
+```
+DWrite.dll  GDI32.dll  KERNEL32.dll  SHELL32.dll  USER32.dll  WTSAPI32.dll  bcrypt.dll  d2d1.dll  msvcrt.dll  ole32.dll
+```
+
+- `WTSAPI32.dll` 在表内 → 第 1 档 #2 的补链在**最终二进制**层面成立，不只是链接器不报错。
+- 表里没有 `oleaut32`/`advapi32`/`uuid`：`uuid` 只是 GUID 数据（不产生导入），另两个当前无被调符号 → 链接库清单里它们是冗余项，但删它们属"清理"不是"修错"，未动。
+- `msvcrt.dll` 是 mingw 静态 CRT 仍留的导入；MSVC `/MT` 版是否出现同名导入**未验证**，所以这张表**不能**直接当 A.4 白名单结案证据。
+- 顺带一条体积事实（同一份代码，三种 mingw 优化档实测）：无 `CMAKE_BUILD_TYPE`（＝`-O0`）4,590,084 B、旧脚本 `-O1` 3,507,020 B、CMake `Release`（`-O3 -DNDEBUG -fno-strict-aliasing`）3,556,680 B。
+  §10.3 的"≤3 MB"判据在交叉构建上任何一档都没接近过，只能在 MSVC `/O2 /GL /MT` 上结。
+
+**一处环境噪声**：冷构建日志有 6 行 `gmake: warning: Clock skew detected`（源文件在 `/mnt/e`，其 Windows mtime 比 WSL 时钟超前约 2 s，刚写出的 `.o` 反而"更旧"）。
+实测 `date` 与 `Get-Date` 差 2 s；冷构建没有"跳过重编"的可能，增量构建那一轮则无此告警，判定为无害。
+若日后出现"改了码没重编"的怪象，先校时（`wsl --shutdown` 会同步一次），别怀疑构建系统。
+

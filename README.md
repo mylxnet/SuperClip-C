@@ -27,7 +27,7 @@ C++_技术方案.md           实现级设计：文件清单、接口签名、�
 cpp/
   CMakeLists.txt          MSVC 主构建
   build.bat               一键构建（自动定位 VS2022 vcvars64）
-  build-tests.sh          WSL/Linux 侧 mingw 交叉编译：逻辑单测（默认）/ 整程序（--app）
+  build-tests.sh          WSL/Linux 侧 mingw 交叉构建（驱动 CMake，清单只有一份）
   src/                    core（纯逻辑）· native（Win32 RAII）· services · ui · app
   tests/test_main.cpp     纯逻辑单测
   tools/PasteTarget.cpp   粘贴闭环用的极简目标程序
@@ -48,14 +48,16 @@ build.bat
 **WSL / Linux 交叉编译（无 MSVC 时的验证路径）**
 
 ```bash
-# 依赖：g++-mingw-w64-x86-64
+# 依赖：cmake、g++-mingw-w64-x86-64
 cd cpp
-bash build-tests.sh          # 只编逻辑层单测 → build-mingw/sc_tests.exe
-bash build-tests.sh --app    # 再编整程序     → build-mingw/SuperClip.exe
+bash build-tests.sh          # 配置 + 构建两个目标 → build-mingw/{sc_tests.exe,SuperClip.exe}
 ```
 
+一次构建两个目标（源清单与链接库清单只由 `CMakeLists.txt` 提供，脚本不再手抄）。
 产物是合法的 Windows x64 exe，直接在 Windows 上运行即可。注意这条路径**不是发布构建**：
-不含 `/W4 /guard:cf`、未内嵌 manifest 与图标、`app.rc` 由 RC.exe 而非 windres 处理。
+无 `/W4 /guard:cf /sdl /LTCG`、CRT 静态方式不同（`-static` vs `/MT`）；`app.rc` 已由 windres 编入
+`.rsrc`（manifest 与 VERSIONINFO 实测可被 Windows 读到），但 RT_MANIFEST 是否被 OS 实际加载仍需在
+MSVC 产物上用 `dumpbin /resources` 结案。
 
 ## 测试
 
