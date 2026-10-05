@@ -61,7 +61,7 @@ constexpr int kHelpTitleH = 40;                 // 顶部标题带（同时是�
 constexpr int kHelpBtnH = 30, kHelpNavBtnW = 76, kHelpCloseBtnW = 56, kHelpBtnGap = 8;
 
 // 与 src/res/app.rc 的 FILEVERSION 同步（PackageRelease.bat 以 app.rc 为准，并校验本行）
-inline constexpr wchar_t kVersionText[]  = L"v2.1.1";
+inline constexpr wchar_t kVersionText[]  = L"v2.1.2";
 // 署名固定（agent.md 四.3：界面上版本号写在署名之前）
 inline constexpr wchar_t kAppSignature[] = L"by Mr lin";
 // 点击署名交给**系统默认浏览器**打开的仓库地址。程序自身仍零网络代码：不链 wininet/winhttp、

@@ -11,8 +11,8 @@
 // 版本号写死为字面量：windres/RC.exe 对 FILEVERSION 的宏展开行为不一致，
 // 且 PackageRelease.bat 以正则抓取 FILEVERSION 行作为发版来源。
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,1,1,0
- PRODUCTVERSION 2,1,1,0
+ FILEVERSION 2,1,2,0
+ PRODUCTVERSION 2,1,2,0
  FILEFLAGSMASK 0x3fL
  FILEFLAGS 0x0L
  FILEOS VOS_NT_WINDOWS32
@@ -25,12 +25,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName",  "SuperClip"
       VALUE "FileDescription", "SuperClip 超级剪贴板"
-      VALUE "FileVersion",  "2.1.1.0"
+      VALUE "FileVersion",  "2.1.2.0"
       VALUE "InternalName", "SuperClip"
       VALUE "LegalCopyright", "Copyright © SuperClip"
       VALUE "OriginalFilename", "SuperClip.exe"
       VALUE "ProductName",  "SuperClip 超级剪贴板"
-      VALUE "ProductVersion", "2.1.1.0"
+      VALUE "ProductVersion", "2.1.2.0"
     END
   END
   BLOCK "VarFileInfo"

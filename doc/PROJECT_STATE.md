@@ -8,10 +8,10 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **v2.1.1**（`app.rc` `FILEVERSION 2,1,1,0` = `Config.h::kVersionText` = 状态栏显示，三处同号） |
-| 里程碑 | M1 步骤 1–11 全部落地并实机走查；步骤 12 的 **A 段**（发布与安装脚本、依赖旁证、验收操作单）完成，**B 段（MSVC 真实出包 + 干净 VM）未做**；v2.1.0 的**五项界面修订 + 快速模式选中位钉第一行**已于 2026-10-05 实机走查通过（判据与证据见 `doc/TESTING.md` §2 末三行）；v2.1.1 修掉「启动即置顶」的实现缺口（§4 坑 #12） |
-| 单测 | 41 例 / 222 断言 / 0 失败（交叉构建产物在 Windows 实跑，2026-10-05 17:1x） |
-| 交叉构建产物 | `SuperClip.exe` 3,649,181 B / MD5 `ac7538b35e7fe311a1eb13544d1ac881` —— **非发布产物**，只用于跑单测与 UI 走查 |
+| 版本 | **v2.1.2**（`app.rc` `FILEVERSION 2,1,2,0` = `Config.h::kVersionText` = 状态栏显示，三处同号） |
+| 里程碑 | M1 步骤 1–11 全部落地并实机走查；步骤 12 的 **A 段**（发布与安装脚本、依赖旁证、验收操作单）完成并已重做成可执行判据单（`cpp/scripts/ReleaseChecklist.md` §2.1/§2.2/§5/§6），**B 段（MSVC 真实出包 + 干净 VM）未做**；v2.1.0 的**五项界面修订 + 快速模式选中位钉第一行**已于 2026-10-05 实机走查通过（判据与证据见 `doc/TESTING.md` §2 末四行）；v2.1.1 修掉「启动即置顶」的实现缺口（§4 坑 #12），v2.1.2 把该修复的**兜底分支也实测通过** |
+| 单测 | 41 例 / 222 断言 / 0 失败（交叉构建产物在 Windows 实跑，2026-10-05 17:44，跑的是**全量干净重建后**的那份 `sc_tests.exe`） |
+| 交叉构建产物 | `SuperClip.exe` 3,649 181 B / MD5 `ab5a5ff23e3312f5fcb282c1f2da317c`（全量干净重建，`RC=0`、error 0 行、自有源 warning 0 行）—— **非发布产物**，只用于跑单测与 UI 走查 |
 | 第三方依赖 | **零**（JSON 自研、单测断言器自研、SHA-256 走系统 BCrypt） |
 | 仓库 | `github.com/mylxnet/SuperClip-C`（public/main），二进制不入 git |
 
@@ -60,7 +60,8 @@ cpp\scripts\PackageRelease.bat      :: 抓 FILEVERSION → 校验 Config.h → �
 | 9 | 首跑 CMake 报 `Manually-specified variables were not used: CMAKE_C_COMPILER` | `project()` 只声明 CXX | 脚本不再传该变量 | 交叉工具链参数要按项目实际语言传 |
 | 10 | 走查把真实历史回滚到快照，且**第一轮把病因判断错了**（误记为"强杀丢了未落盘的内存条目"） | ① 程序其实是**变更即落盘**（`Store.cpp` 六处 `storage_.Save`），我按 `SaveToDisk` 的唯一调用点就下了"只在退出链写盘"的结论，属于只看一处调用点就推断全局；② 真正的风险是反方向的：**还原文件时若实例还活着，它下一次变更就会用内存态把还原盖掉**；③ 收起态主窗 `CloseMainWindow()` 返回 false，脚本兜底走了 `Stop-Process -Force` | 走查规程第 0 条改为"先退出再动文件"（理由已订正），并保留 `ShowWindow(SW_SHOW)` + `CloseMainWindow()`/`PostMessageW(WM_CLOSE)` 的正道；本轮实测：快照 135 条与还原后逐 `Id` 比对 0 缺失 0 多余，唯一差异是还原之后新增的 6 处收藏翻转（同步写盘的正常行为） | 结论：强杀**不**丢历史；真正的暴露窗是"快照→还原"之间那约 2 分钟（14:39 建快照 → 14:41:41 重启读回，期间跑的是合成数据实例），那段时间内的真实复制会丢，且日志不记复制事件、事后无法证明。教训：**推断持久化/生命周期语义必须把全部调用点列完**，不能靠单个函数的调用次数 |
 | 11 | v2.1.0 首构建 3 处编译错误：`ID2D1RenderTarget` 没有 `CreateTextLayout`、没有 `CreateBitmapFromHICON`、`std::min(long, int)` 无匹配 | mingw 的 `d2d1.h` 比 MS 的少几个方法（真机 vtable 里在，头没同步）；`RECT` 成员是 `LONG`，和 `int` 混进同一个模板函数就不匹配 | 量文字改走 `IDWriteFactory::CreateTextLayout`（排版与 DPI 无关，工厂建出的 layout 可喂任何目标）；图标改 `GetIconInfo`+`GetDIBits` 取预乘 BGRA 再 `CreateBitmap`，**不引 `windowscodecs`**，导入表与 v2.0.3 逐字一致；`RECT` 参与算术前先显式 `static_cast<int>` | Win7 基线砍 API（见 #8）之外还有一条：**mingw 头 ≠ MSVC 头**，交叉构建通过不代表 RC.exe 那套也这么写，反之亦然；遇到"某方法不存在"先翻 `/usr/x86_64-w64-mingw32/include/` 再决定绕法 |
-| 12 | **C13「启动即置顶」不生效**：`settings.json` 里 `Topmost=true`，冷启动后 `GWL_EXSTYLE` 的 `WS_EX_TOPMOST` 位却是 0，而 `SetWindowPos(HWND_TOPMOST)` **返回 TRUE、`GetLastError()=0`** | 目标窗口**不在前台**时，系统会**静默丢弃**这条 z-order 带变更（前台带限制的同一家族）。实测：`BringWindowToTop` 返回 TRUE 无效果、`SwitchToThisWindow` 无效、由后台进程跨进程调用同样无效；一旦该窗被真实点击激活，同一条调用立刻生效。**重试与延时都救不了**（曾 6/6 次冷启动全 False） | 显示链补两处：① `ShowWindow`+`UpdateWindow` 之后再断言一次 `SetWindowPos`（同进程、刚建窗，多数场景已足够）② `WM_ACTIVATE` 里若 `WA_ACTIVE` 且带没落上，`PostMessageW(WM_APP_RAISE_TOPMOST)` **延后一条消息**再补发——延后是必须的，`PasteTarget.cpp:76` 早就记过"不能在 `WM_ACTIVATE` 里直接改窗口状态，系统处理完这条还会再动一次" | ① **Win32 的返回值 TRUE 不等于生效**，凡是"系统可能不答应"的调用（z-order、前台、剪贴板）都要用**事后断言**而不是信任返回值；② 走查脚本必须以 `GWL_EXSTYLE` 位为判据，不能以 API 返回值为判据；③ 本轮实测：修复后连续两次冷启动（含把前台让给靶窗的那次）`topmost_bit=True` |
+| 12 | **C13「启动即置顶」不生效**：`settings.json` 里 `Topmost=true`，冷启动后 `GWL_EXSTYLE` 的 `WS_EX_TOPMOST` 位却是 0，而 `SetWindowPos(HWND_TOPMOST)` **返回 TRUE、`GetLastError()=0`** | 目标窗口**不在前台**时，系统会**静默丢弃**这条 z-order 带变更（前台带限制的同一家族）。实测：`BringWindowToTop` 返回 TRUE 无效果、`SwitchToThisWindow` 无效、由后台进程跨进程调用同样无效；一旦该窗被真实点击激活，同一条调用立刻生效。**重试与延时都救不了**（曾 6/6 次冷启动全 False） | 显示链补两处：① `ShowWindow`+`UpdateWindow` 之后再断言一次 `SetWindowPos`（同进程、刚建窗，多数场景已足够）② `WM_ACTIVATE` 里若 `WA_ACTIVE` 且带没落上，`PostMessageW(WM_APP_RAISE_TOPMOST)` **延后一条消息**再补发——延后是必须的，`PasteTarget.cpp:76` 早就记过"不能在 `WM_ACTIVATE` 里直接改窗口状态，系统处理完这条还会再动一次" | ① **Win32 的返回值 TRUE 不等于生效**，凡是"系统可能不答应"的调用（z-order、前台、剪贴板）都要用**事后断言**而不是信任返回值；② 走查脚本必须以 `GWL_EXSTYLE` 位为判据，不能以 API 返回值为判据；③ 本轮实测：修复后连续两次冷启动（含把前台让给靶窗的那次）`topmost_bit=True`；④ **v2.1.2（同日 17:41）拿到兜底分支的实机证据**：重启后台启动的实例正好是丢带态（`exstyle=0x40000`、位 0），外部进程 `BringWindowToTop` 与跨进程 `SetWindowPos(HWND_TOPMOST)` 都返回 TRUE 而位不落，注入一次 Alt+`SetForegroundWindow` 让本窗成前台（`fg==hwnd`）时位仍 0，**800 ms 后位变 1、`0x40008` 且保持** → ②那条延后补发链路被真实执行过；顺带证明**harness 从外部也修不好它**，只能靠应用自身的激活兜底 |
+| 13 | v2.1.2 那轮 `tee` 到 `/tmp/bump.log` 的构建日志，下一次 `wsl.exe` 调用就 `No such file or directory`，导致"自有源 0 警告"无法补取证 | WSL 发行版闲置后会自动关停，发行版内的 `/tmp` 随之清空（用户级老坑在项目侧的再现） | 构建/测试日志一律写**持久路径**（`/root/*.log` 或 `/mnt/e/...`），或当次调用内就把结论 grep 出来；跨调用不要假设 `/tmp` 还在 | 凡是"下次还要引用"的证据，别放在会被回收的目录里；`/mnt/e` 下的文件反而最稳 |
 
 ## 5. 架构决策的"为什么"（只记代码读不出来的）
 
@@ -82,10 +83,12 @@ cpp\scripts\PackageRelease.bat      :: 抓 FILEVERSION → 校验 Config.h → �
 
 | 项 | 状态 | 备注 |
 |---|---|---|
-| 步骤 12 B：MSVC 出包 + `dumpbin /dependents` + ≤3 MB 体积门 + 干净 VM 的 AC-7/AC-8 | **未做** | 本机无 SDK；操作单在 `cpp/scripts/ReleaseChecklist.md` §3 |
+| 步骤 12 B：MSVC 出包 + `dumpbin` 判据 + ≤3 MB 体积门 + 干净 VM 的 AC-7/AC-8 | **未做** | 本机无 SDK。操作单已在 v2.1.2 重做成可逐条执行的形式：`cpp/scripts/ReleaseChecklist.md` **§2.1 环境自检 → §2.2 十行判据单 → §3 VM 3.1–3.9 → §5 发布记录表单**；体积门超标走 **§6** 的 B→A→C |
+| `ac8_loop.ps1` 主循环（真发按键、真粘贴 100 轮） | **未验证** | 语法与两道守卫已实测拦停正确；但它会把 100 条写进当前实例历史，**只能在快照 VM 首跑**，绝不能在用户机器上试 |
+| v2.1.1 置顶兜底分支（`WM_ACTIVATE → WM_APP_RAISE_TOPMOST`） | **已通过**（2026-10-05 17:41，v2.1.2 那轮撞上了"后台启动、系统丢带"的起始态） | 判据链：位 0 → 外部 `BringWindowToTop`/跨进程 `SetWindowPos` 返回 TRUE 位不落 → 注入 Alt+`SetForegroundWindow` 后 `fg==hwnd` 位仍 0 → **800 ms 后位 1、`0x40008` 保持**。详见 §4 坑 #12 ④ |
 | v2.1.0 五项界面修订的实机走查 | **已通过**（2026-10-05 17:01–17:07，合成数据、全程带命中守卫） | ① 标题栏图标：`doc/images/readme-title.png` 上图左端可见，模式文字右移后仍可点（`MODETEXT_CLICK` → `PasteMode` 0→1→0）② 图钉新形态 + 置顶态下划线：`readme-title.png` 上/下两态实拍，点图钉 `topmost` True→False→True ③ 搜索框 ✕：`readme-search.png`（有字含 ✕）与清空态实拍（占位符「搜索...」、无 ✕）④ 底栏命中守卫：点状态栏空白 `fav_before=2 fav_after=2` 不改收藏；点署名后前台窗口标题变为 `mylxnet/SuperClip-C`（**注意**：进程列表法无效，浏览器新标签复用同一进程）⑤ 气泡位置：`tip=1571,184,1891,238`，在 hovered 行之上、`tip_left - win_left = 51 px ≈ 3 个全角字宽`（`readme-tip.png`）。全程 `GUARD_FAILS=0` |
 | v2.1.0 快速模式钉第一行（C14）的实机走查 | **已通过**（靶窗 `SuperClipPasteTarget`；① 取自 16:2x 那轮，②③ 取自 17:04–17:05 这轮） | ① 不点任何条目、直接空格 → 靶窗 EDIT 得 `C14B9893HEADTAIL`（含最新那条、不含上一条）② 连贴第二次 → 靶窗得 `C14A4577HEADTAIL`（粘过的那条已沉底，第一行自然变成下一条）③ 应用侧日志同步给出两行 `[paste] Ctrl+V → SuperClipPasteTarget…按键事件数=4`（17:04:59 / 17:05:05）④ 收藏数全程 2 未变。**未覆盖**：⑤"列表已下滚时钉住行滚进视口"与"绑定完成后直接空格"仍只有 §9.4-16 的逻辑证据，UI 侧未实拍 |
-| README 配图 | **已重拍并核对**（v2.1.1） | `doc/images/readme-{main,search,status}.png` 换成 v2.1.1 实拍，新增 `readme-tip.png`（悬浮气泡）与 `readme-title.png`（图钉两态合成）。五张图逐张 `Read` 过：列表内容全部来自 `cpp/qa/mksynthetic.ps1` 的合成条目，无真实剪贴板内容 |
+| README 配图 | **主图/搜索图/气泡图/两态图为 v2.1.1 实拍**；`readme-status.png` 因 v2.1.2 只改版本号数字而未重拍，图注已改为不宣称具体版本号 | `doc/images/readme-{main,search,status}.png` 换成 v2.1.1 实拍，新增 `readme-tip.png`（悬浮气泡）与 `readme-title.png`（图钉两态合成）。五张图逐张 `Read` 过：列表内容全部来自 `cpp/qa/mksynthetic.ps1` 的合成条目，无真实剪贴板内容。**待办**：凡是画面里带底栏的实拍图（`main`/`status`/`tip`）都显示着 `v2.1.1` 字样，要与版本号同步就得重拍——重拍需约桌面 + 投合成数据，且**不能**在真实数据上截底栏（会把用户绑定的窗口标题拍进 git） |
 | 150%/200% DPI 无错位复核 | 待用户改缩放 | 步骤 6 遗留；帮助窗 DPI 排版挂同一个包；v2.1.0 新增的图标与 ✕ 也在同一包里复核 |
 | N9 连贴按键竞态 | 未闭环 | `WM_WTSSESSION_CHANGE` 注入已实测可取消；`WM_ENDSESSION` 无法注入验证 |
 | 靶心红/绿像素复核 + 真实注销场景 | 部分收窄 | 红色（未绑定）已由 2026-10-05 实拍图给出像素证据；**绿色（已绑定）仍待**；真实注销场景仍待。步骤 9 |
@@ -94,7 +97,7 @@ cpp\scripts\PackageRelease.bat      :: 抓 FILEVERSION → 校验 Config.h → �
 | 16 px 图标档偏糊 | 已知限制 | 需单独画一版极简图 |
 | `LegalCopyright` 文案 | 待裁决 | 现为 `Copyright © SuperClip` |
 | `advapi32`/`oleaut32` 能否从链接清单删除 | 未动 | 导入表里当前无它们，属冗余项；删除属"清理"不属"修错" |
-| 一次性 QA 脚本去留 | 待定 | `cpp/qa/` 现 26 个 `.ps1`（本轮新增 `mksynthetic.ps1`、`readme_shots.ps1`），多数是历轮探针；有复用价值的已并入走查规程 |
+| 一次性 QA 脚本去留 | 待定 | `cpp/qa/` 现 27 个 `.ps1`（v2.1.2 新增 `ac8_loop.ps1`，属**可复用**资产，随发布验收走），多数是历轮探针；有复用价值的已并入走查规程 |
 | 远端 CI | 未做 | 路径已与本地统一（`cmake --build`），剩"选哪个镜像 + 配置远端属发布动作需授权" |
 
 ## 7. 红线（不要碰）

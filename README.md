@@ -4,7 +4,7 @@
 >
 > 复制过的内容它替你留着：一个全局热键呼出列表，选中即粘回你要的地方。不联网、不装运行库、数据只在你自己的机器上。
 
-Windows 7 SP1 – 11（x64） · 版本 [v2.1.1](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
+Windows 7 SP1 – 11（x64） · 版本 [v2.1.2](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
 
 [English](#english) | [中文](#这是什么)
 
@@ -39,7 +39,7 @@ Windows 7 SP1 – 11（x64） · 版本 [v2.1.1](CHANGELOG.md) · 交付 单文�
 
 | ![使用帮助](doc/images/readme-help.png) | ![底栏署名](doc/images/readme-status.png) |
 |---|---|
-| 9 步使用帮助，按钮或 ← → 翻页，`Esc` 关闭 | 底栏放大 2×：状态提示在左，`v2.1.1  by Mr lin` 在右（单击署名打开仓库页） |
+| 9 步使用帮助，按钮或 ← → 翻页，`Esc` 关闭 | 底栏放大 2×：状态提示在左，版本号 + `by Mr lin` 在右（单击署名打开仓库页）。**此图摄于 v2.1.1**，仅版本号数字与当前版不同，版式一致 |
 
 | ![悬浮全文气泡](doc/images/readme-tip.png) | ![标题栏两态](doc/images/readme-title.png) |
 |---|---|
@@ -49,7 +49,7 @@ Windows 7 SP1 – 11（x64） · 版本 [v2.1.1](CHANGELOG.md) · 交付 单文�
 
 ### 使用者（拿到即用）
 
-1. 下载 `SuperClip_v2.1.1_portable.zip`（Releases 页），解压到任意目录。
+1. 下载 `SuperClip_v2.1.2_portable.zip`（Releases 页），解压到任意目录。
 2. 双击 `SuperClip.exe`。托盘出现图标即已在后台记录，无需其他设置。
 3. 在任何应用里按 `Ctrl` + `` ` ``（数字 1 左边那个键）呼出列表，双击一条粘到光标处。
 
@@ -167,11 +167,11 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 
 ## 更新日志
 
-详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.1.1**。
+详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.1.2**。
 
 ## 许可证
 
-当前版本**还没有正式的开源许可证文件**。界面底栏的署名是 `v2.1.1  by Mr lin`，
+当前版本**还没有正式的开源许可证文件**。界面底栏的署名是 `v2.1.2  by Mr lin`，
 而 `cpp/src/res/app.rc` 的 `LegalCopyright` 仍是 `Copyright © SuperClip`（是否补署名待项目所有者裁决）。
 采用哪种许可证（MIT / GPL / 仅闭源分发）也要由所有者确定后再补 `LICENSE` 文件，
 并把 `LegalCopyright` 一并改成同一措辞。
@@ -188,7 +188,7 @@ were working in. One global hotkey (`Ctrl` + `` ` ``) brings up the list; nothin
 Hand-rolled ~180-line JSON reader, BCrypt for SHA-256, statically linked CRT.
 No .NET, no Qt, no runtime prerequisites, **no network code at all**.
 
-**Quick start** — unzip `SuperClip_v2.1.1_portable.zip`, run `SuperClip.exe`, press `Ctrl` + `` ` ``.
+**Quick start** — unzip `SuperClip_v2.1.2_portable.zip`, run `SuperClip.exe`, press `Ctrl` + `` ` ``.
 Optionally run `installer\install.bat` as administrator for Start Menu / Desktop shortcuts.
 Uninstalling never deletes your history.
 
@@ -199,6 +199,6 @@ folder like a password file.
 **Build from source** — `cd cpp && build.bat` (VS2022) or `bash build-tests.sh` for the mingw cross-build;
 unit tests run on Windows: 41 cases / 222 assertions / 0 failures.
 
-**License** — no license file has been chosen yet. The app's status bar signs "v2.1.1  by Mr lin", while the
+**License** — no license file has been chosen yet. The app's status bar signs "v2.1.2  by Mr lin", while the
 version resource in `app.rc` still reads "Copyright © SuperClip"; both the terms and that wording are the
 project owner's call.
