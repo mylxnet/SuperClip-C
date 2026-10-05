@@ -23,6 +23,7 @@ set(SC_COMMON_SOURCES
   src/core/TableParser.cpp
   src/core/Json.cpp
   src/core/Store.cpp
+  src/core/Settings.cpp
   src/services/StorageService.cpp
   src/util/Log.cpp
 )
@@ -35,9 +36,12 @@ set(SC_APP_SOURCES
   src/native/SystemInfo.cpp
   src/services/ClipboardMonitor.cpp
   src/services/TrayService.cpp
+  src/services/PasteService.cpp
+  src/services/ProcessPicker.cpp
   src/ui/Theme.cpp
   src/ui/ListRenderer.cpp
   src/ui/HoverTip.cpp
+  src/ui/HelpWindow.cpp
   src/ui/MainWindow.cpp
   src/app/AppContext.cpp
   src/main.cpp
@@ -69,8 +73,9 @@ endif()
 
 # uuid：SHGetKnownFolderPath 的 FOLDERID_* 定义（MSVC=uuid.lib，mingw=libuuid.a）
 # d2d1/dwrite 自步骤 6（ListRenderer）起链接；dwmapi 走 LoadLibrary，不入链
+# wtsapi32：WTSRegisterSessionNotification（MainWindow 锁屏取消点选）——不链则 LNK2019
 target_link_libraries(SuperClip PRIVATE
-  user32 kernel32 shell32 gdi32 advapi32 ole32 oleaut32 uuid bcrypt d2d1 dwrite
+  user32 kernel32 shell32 gdi32 advapi32 ole32 oleaut32 uuid bcrypt d2d1 dwrite wtsapi32
 )
 
 set_target_properties(SuperClip PROPERTIES

@@ -35,7 +35,7 @@ std::wstring HexSha256Utf8(std::wstring_view content) {
     }
     BCryptCloseAlgorithmProvider(alg, 0);
   }
-  return out;   // 任何失败返回空串：调用方据此拒绝入列（不做二次去重）
+  return out;   // 失败返回空串：调用方不额外拒绝，条目照常入列（去重此时按空串比对）
 }
 
 }  // namespace sc
