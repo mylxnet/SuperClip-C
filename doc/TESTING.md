@@ -54,11 +54,15 @@
 
 ## 4. 走查的数据防护规程（硬性，防误伤用户真实数据）
 
-0. **先优雅退出，再动文件**。历史只在退出链落盘（`AppContext.cpp:267` 的 `SaveToDisk`），
-   运行期新复制的条目**只在内存里**。主窗收起时 `Process.CloseMainWindow()` 会失败（隐藏窗收不到），
-   必须 `ShowWindow(SW_SHOW)` 之后再 `CloseMainWindow()`，或直接 `PostMessageW(hwnd, WM_CLOSE, 0, 0)`，
-   并**等进程真正退出**再备份。2026-10-05 的 README 取图轮就是漏了这步：`CloseMainWindow` 返回 false 后被
-   `Stop-Process -Force` 兜底杀掉，自上次落盘以来的内存条目**已丢失，不可恢复**。
+0. **先让实例退出，再动文件**。理由是**反的**（2026-10-05 复查代码订正）：历史是**变更即落盘**
+   （`Store.cpp` 六处 `storage_.Save`，写侧 `.tmp` + `ReplaceFileW` 原子替换），强杀**不会**丢历史；
+   但只要实例还活着，它下一次变更就会用**自己的内存态**把你刚还原的 `history.json` 整个盖回去。
+   所以顺序必须是：退出实例 → 备份 → 投喂 → 走查 → 退出实例 → 还原 → 重启。
+   主窗收起时 `Process.CloseMainWindow()` 会失败（隐藏窗收不到），要 `ShowWindow(SW_SHOW)` 之后再
+   `CloseMainWindow()`，或直接 `PostMessageW(hwnd, WM_CLOSE, 0, 0)`，并**等进程真正退出**再动文件。
+   2026-10-05 README 取图轮漏了这步、走了 `Stop-Process -Force`，**当时的后果没有想象的严重**（误判为"内存条目不可恢复
+   丢失"）：真正的暴露窗只有"建快照→还原"之间那约 2 分钟，其间跑的是合成数据实例；日志不记复制事件，
+   所以那两分钟内有没有真实复制事后无法证明。还原后已按 `Id` 逐条比对，135 条 0 缺失 0 多余。
 1. 跑 `SuperClip.exe` 前：备份 `%APPDATA%\SuperClip\{history.json,settings.json,error.log}` 到本轮**单独新建**的 Temp 目录。
 2. 只投喂**一次性合成条目**（带本轮唯一 token），绝不粘贴/外泄用户真实历史内容。
 3. 还原前必须打印并核对：live 与备份各自的**条目数**、各自是否含本轮 token；**数不对就停下来问**，不许直接还原。

@@ -47,7 +47,7 @@ SuperClip 超级剪贴板 · C++ 重写版（Win32 + Direct2D 全自绘，单文
 - README 按使用者向模板重写（这是什么 / 核心特性 / 界面 / 快速开始 / 技术栈 / 数据与隐私 / 项目结构 / 常用操作 /
   故障排查 / 更新日志 / 许可证 + 末尾 English 段），并配 4 张实拍图 `doc/images/readme-{main,search,help,status}.png`；
   图内列表内容全部由新增的 `cpp/qa/mksynthetic.ps1` 合成，逐张读图核对后才入库。
-- 走查规程加两条硬性：`doc/TESTING.md` §4 第 0 条「先优雅退出再动文件」（历史只在退出链落盘，强杀即丢），
+- 走查规程加两条硬性：`doc/TESTING.md` §4 第 0 条「先让实例退出再动文件」（理由是活实例会用内存态盖掉刚还原的文件），
   第 6 条「进 `doc/images/` 的图必须来自合成数据并逐张读图核对」；驱动器为新增的 `cpp/qa/readme_shots.ps1`。
 - 第三方依赖归零（原 ADR 允许的 RapidJSON 与 Catch2 均未引入）。
 
@@ -57,9 +57,12 @@ SuperClip 超级剪贴板 · C++ 重写版（Win32 + Direct2D 全自绘，单文
 - 16 px 档图标偏糊（白色圆角底板占画幅约 1/4），要更锐利需为 16 px 单独画一版。
 - `IDWriteTextFormat::Clone` 不可用（需 `_WIN32_WINNT ≥ 0x0603`，基线 Win7），右对齐格式改走工厂再要一份。
 - `app.rc` 的 `LegalCopyright` 仍是 `Copyright © SuperClip`，署名文案待裁决。
-- **历史只在退出链落盘**（契约即"退出即落盘"）：进程被强杀或断电会丢掉自上次退出以来的全部新条目。
-  是否改为入列后防抖落盘属产品语义变更，待裁决。本轮 README 取图时踩到过一次：`CloseMainWindow()` 对隐藏窗失效
-  → 脚本兜底强杀 → 用户自上次落盘以来的内存条目丢失，**不可恢复**；规程已补（`doc/TESTING.md` §4 第 0 条）。
+- **文档结论订正（历史落盘时机）**：本轮先误记为"只在退出链落盘、强杀即丢"，复查代码后确认实为
+  **变更即落盘**（`Store.cpp` 六处 `storage_.Save`，`.tmp` + `ReplaceFileW` 原子替换；`AppContext.cpp:267`
+  的 `SaveToDisk` 只是退出兜底）。据此改写了 `README.md`、`doc/DEPLOY.md` §5、`doc/PROJECT_STATE.md` 坑 #10 与
+  待办表、`doc/TESTING.md` §4 第 0 条。取图轮的 `Stop-Process -Force` 因此**不丢历史**；真实暴露窗只有
+  "建快照→还原"之间约 2 分钟（其间跑合成数据实例），还原后按 `Id` 逐条比对 135 条 0 缺失 0 多余；
+  日志不记复制事件，那两分钟内是否发生过真实复制**无法事后证明**——这是本节唯一保留的未结项。
 
 ### v2.0.2 · 2026-10-05
 
