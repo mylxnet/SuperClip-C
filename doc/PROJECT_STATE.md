@@ -58,6 +58,7 @@ cpp\scripts\PackageRelease.bat      :: 抓 FILEVERSION → 校验 Config.h → �
 | 7 | 构建日志 `Clock skew detected`，一度以为已解决 | 源在 `/mnt/e`（Windows mtime）与 WSL 时钟瞬时差，方向会变（实测 ±2 s 到 13 s） | 无根治；改为"改完码要看有没有 `Building CXX object` 行，别只看 `RC=0`" | 跨文件系统比时间不可靠 |
 | 8 | `IDWriteTextFormat::Clone` 编译不过 | 它要求 `_WIN32_WINNT ≥ 0x0603`，项目基线是 Win7（`0x0601`） | 右对齐格式改为向工厂再要一份 | Win7 基线会砍掉一批"看起来人人都有"的 API |
 | 9 | 首跑 CMake 报 `Manually-specified variables were not used: CMAKE_C_COMPILER` | `project()` 只声明 CXX | 脚本不再传该变量 | 交叉工具链参数要按项目实际语言传 |
+| 10 | **走查强杀实例，丢了用户自上次落盘以来的新条目（不可恢复）** | 历史只在退出链 `SaveToDisk()` 落盘；主窗收起时 `CloseMainWindow()` 返回 false，脚本走到 `Stop-Process -Force` 兜底 | 走查规程加第 0 条：先 `ShowWindow(SW_SHOW)` 再 `CloseMainWindow()`（或 `PostMessageW(WM_CLOSE)`），**确认进程退出后才备份** | 见 `doc/TESTING.md` §4 第 0 条；"只在退出时落盘"本身是契约行为，但它让任何强杀都变成数据丢失，已作为风险登记待裁决 |
 
 ## 5. 架构决策的"为什么"（只记代码读不出来的）
 
@@ -79,11 +80,12 @@ cpp\scripts\PackageRelease.bat      :: 抓 FILEVERSION → 校验 Config.h → �
 | 步骤 12 B：MSVC 出包 + `dumpbin /dependents` + ≤3 MB 体积门 + 干净 VM 的 AC-7/AC-8 | **未做** | 本机无 SDK；操作单在 `cpp/scripts/ReleaseChecklist.md` §3 |
 | 150%/200% DPI 无错位复核 | 待用户改缩放 | 步骤 6 遗留；帮助窗 DPI 排版挂同一个包 |
 | N9 连贴按键竞态 | 未闭环 | `WM_WTSSESSION_CHANGE` 注入已实测可取消；`WM_ENDSESSION` 无法注入验证 |
-| 靶心红/绿像素复核 + 真实注销场景 | 残留 | 步骤 9 |
+| 靶心红/绿像素复核 + 真实注销场景 | 部分收窄 | 红色（未绑定）已由 2026-10-05 实拍图给出像素证据；**绿色（已绑定）仍待**；真实注销场景仍待。步骤 9 |
+| **历史只在退出链落盘**：进程被强杀 / 断电会丢掉自上次退出以来的全部新条目 | 待裁决 | 契约写的就是"退出即落盘"，所以这是**按规格的行为**，不是 bug；但 2026-10-05 的走查事故证明代价是丢真实历史。两个可改点：① 入列后 2 s 防抖合并写盘（整文件重写，n≤500 时约几十 KB）；② `uninstall.bat` 改成先 `taskkill`（不带 `/f`）等退出链走完、再兜底 `/f`。**均涉语义变更，未动代码** |
 | 16 px 图标档偏糊 | 已知限制 | 需单独画一版极简图 |
 | `LegalCopyright` 文案 | 待裁决 | 现为 `Copyright © SuperClip` |
 | `advapi32`/`oleaut32` 能否从链接清单删除 | 未动 | 导入表里当前无它们，属冗余项；删除属"清理"不属"修错" |
-| 一次性 QA 脚本去留 | 待定 | `cpp/qa/` 24 个 `.ps1`，多数是历轮探针；有复用价值的已并入走查规程 |
+| 一次性 QA 脚本去留 | 待定 | `cpp/qa/` 现 26 个 `.ps1`（本轮新增 `mksynthetic.ps1`、`readme_shots.ps1`），多数是历轮探针；有复用价值的已并入走查规程 |
 | 远端 CI | 未做 | 路径已与本地统一（`cmake --build`），剩"选哪个镜像 + 配置远端属发布动作需授权" |
 
 ## 7. 红线（不要碰）

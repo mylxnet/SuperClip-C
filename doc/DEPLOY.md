@@ -82,6 +82,13 @@ dumpbin /imports    build\Release\SuperClip.exe
 | 设置 | `settings.json`（位置/尺寸 DIP、置顶、粘贴模式、复制模式、筛选、绑定进程名） | 步骤 10 实机结论见 `doc/PROJECT.md` §11 |
 | 日志 | `error.log`：追加写；超过 1 MB 保留尾部 512 KB 重写；轮转任一步失败就放弃轮转（宁可超长也不写坏） | `Log.cpp:60`、`Config.h:20` |
 | 崩溃兜底 | `SetUnhandledExceptionFilter` + `set_terminate` → 记 `error.log`；会话关闭时**不弹窗**（弹窗会卡注销） | `main.cpp:34` |
+| **历史落盘时机** | 只在退出链写盘。运行期新复制的条目只存在于内存 → **强杀进程或断电会丢掉自上次退出以来的全部新条目** | `AppContext.cpp:267`（`SaveToDisk` 唯一调用点） |
+
+运维含义：换版本、拷走 `history.json` 做备份、或跑任何自动化脚本之前，必须先用**托盘「退出」或标题栏 ✕**
+让程序正常退出（`WM_CLOSE` → 落盘），不要 `taskkill /f`。`uninstall.bat` 里的 `taskkill /im SuperClip.exe /f`
+是卸载场景（程序文件要删），它会丢掉那一段内存条目——契约写的就是"退出即落盘"，所以这是**按规格的行为**，
+但运维上必须知道。是否把 `uninstall.bat` 改成"先礼后兵"（先 `taskkill`（不带 `/f`，等它自己走完退出链）再兜底 `/f`），
+或把落盘改成入列后防抖写盘，都属语义变更，**待裁决**，本轮未动代码。
 
 ## 6. 从 .NET v2.0.2 接管数据
 
@@ -94,7 +101,9 @@ dumpbin /imports    build\Release\SuperClip.exe
 5. 通过后删除备份。
 
 互读验证做过一次（`doc/PROJECT.md` §11 步骤 3 判据：C++ 写出的 `history.json` 能被 .NET 版读回）。
-反方向（.NET 写 → C++ 读）在走查中由合成数据覆盖，**真实 .NET 生产数据的整机接管演练未验证**。
+2026-10-05 另有一条旁证：**用户真实生产数据（135 条）被本版完整读回**（重启日志 `启动完成，条目 135 条`，
+且 `按进程名恢复绑定` 在真实 `settings.json` 上生效）——但那 135 条是本 C++ 版自己写的，属**跨版本连续性**证据，
+**不等于** ".NET 写的文件被 C++ 读"。后者仍只有合成数据覆盖，真实 .NET 生产文件的整机接管演练 **未验证**。
 
 ## 7. 故障排查
 
@@ -132,4 +141,4 @@ dumpbin /imports    build\Release\SuperClip.exe
 | 4 | `cl /W4` 零警告、`__try/__except` 兜底路径 | mingw 下该宏不可用 |
 | 5 | AC-7 无运行库 / AC-8 断网 100 次（`ReleaseChecklist.md` §3 的 3.1–3.9） | 无干净 VM |
 | 6 | `install.bat` 提权整链、`uninstall.bat` 真实删除 | 当前 shell 非提权 |
-| 7 | RT_MANIFEST 是否被 OS 实际加载；图标在真机托盘/任务栏观感；状态栏「v2.0.3 by Mr lin」排版 | 需实机走查（二进制层已证 `.rsrc` 内嵌、图标可被 `ExtractAssociatedIcon` 取出） |
+| 7 | RT_MANIFEST 是否被 OS 实际加载；图标在真机托盘/任务栏的观感 | 需实机走查 + `dumpbin /resources`（二进制层已证 `.rsrc` 内嵌、图标可被 `ExtractAssociatedIcon` 取出；主窗整窗图已给出**红色靶心**与**底栏 `v2.0.3  by Mr lin`** 的像素级证据，见整改清单 §6.6） |

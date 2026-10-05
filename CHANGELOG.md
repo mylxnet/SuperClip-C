@@ -44,6 +44,11 @@ SuperClip 超级剪贴板 · C++ 重写版（Win32 + Direct2D 全自绘，单文
   单测由 Catch2 改为自带断言器、删除与 manifest 冲突的 `VS_DPI_AWARE`、依赖面清单按"链接库/动态加载/不调用"三类重列、
   测试规模更正为 40 例 / 214 断言 / 0 失败、附录 A.4 链接库清单与 `CMakeLists.txt` 逐字一致。
 - 文档目录重组：设计/技术/审计文档移入 `doc/`，根目录只留 `README.md`、`agent.md`、`cpp/`、`doc/`。
+- README 按使用者向模板重写（这是什么 / 核心特性 / 界面 / 快速开始 / 技术栈 / 数据与隐私 / 项目结构 / 常用操作 /
+  故障排查 / 更新日志 / 许可证 + 末尾 English 段），并配 4 张实拍图 `doc/images/readme-{main,search,help,status}.png`；
+  图内列表内容全部由新增的 `cpp/qa/mksynthetic.ps1` 合成，逐张读图核对后才入库。
+- 走查规程加两条硬性：`doc/TESTING.md` §4 第 0 条「先优雅退出再动文件」（历史只在退出链落盘，强杀即丢），
+  第 6 条「进 `doc/images/` 的图必须来自合成数据并逐张读图核对」；驱动器为新增的 `cpp/qa/readme_shots.ps1`。
 - 第三方依赖归零（原 ADR 允许的 RapidJSON 与 Catch2 均未引入）。
 
 **已知限制（本版仍未验证或未覆盖）**
@@ -52,6 +57,9 @@ SuperClip 超级剪贴板 · C++ 重写版（Win32 + Direct2D 全自绘，单文
 - 16 px 档图标偏糊（白色圆角底板占画幅约 1/4），要更锐利需为 16 px 单独画一版。
 - `IDWriteTextFormat::Clone` 不可用（需 `_WIN32_WINNT ≥ 0x0603`，基线 Win7），右对齐格式改走工厂再要一份。
 - `app.rc` 的 `LegalCopyright` 仍是 `Copyright © SuperClip`，署名文案待裁决。
+- **历史只在退出链落盘**（契约即"退出即落盘"）：进程被强杀或断电会丢掉自上次退出以来的全部新条目。
+  是否改为入列后防抖落盘属产品语义变更，待裁决。本轮 README 取图时踩到过一次：`CloseMainWindow()` 对隐藏窗失效
+  → 脚本兜底强杀 → 用户自上次落盘以来的内存条目丢失，**不可恢复**；规程已补（`doc/TESTING.md` §4 第 0 条）。
 
 ### v2.0.2 · 2026-10-05
 
