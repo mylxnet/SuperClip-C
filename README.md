@@ -4,7 +4,7 @@
 >
 > 复制过的内容它替你留着：**一次复制多条，每条按需粘贴**——随时贴回任何窗口，不用回头再复制。
 
-**平台** Windows 10 / 11（x64）（[设计下限 Win7 SP1](doc/DESIGN.md)，未实机验证） · **交付** 单文件 exe、免运行库 · **网络** [零（需求红线 AC-8）](doc/DESIGN.md) · **版本** [v2.5.0](CHANGELOG.md) · **下载** [Releases](https://github.com/mylxnet/SuperClip-C/releases)
+**平台** Windows 10 / 11（x64）（[设计下限 Win7 SP1](doc/DESIGN.md)） · **交付** 单文件 exe、免运行库 · **网络** · **版本** [v2.5.0]) · **下载** [Releases](https://github.com/mylxnet/SuperClip-C/releases)
 
 [English](#english) | [中文](#这是什么)
 
@@ -84,7 +84,7 @@ bash build-tests.sh          # 产出 build-mingw/{SuperClip.exe, sc_tests.exe}
 build-mingw\sc_tests.exe
 ```
 
-其余构建、打包、验收说明见 [doc/PROJECT_STATE.md](doc/PROJECT_STATE.md) 与 [doc/DEPLOY.md](doc/DEPLOY.md)。
+
 
 ## 🛠️ 技术栈
 
@@ -186,7 +186,7 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 
 ## 📜 更新日志
 
-详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.5.0**（2026-10-06）。
+当前版本 **v2.5.0**（2026-10-06）。
 
 ## 📄 许可证
 
