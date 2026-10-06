@@ -1,6 +1,6 @@
 # SuperClip（C++ 版）部署与运维
 
-> 对应产品 **v2.4.3**（部署面自 v2.0.3 以来只变过三处：接力兜底热键的键位，见 §5；exe 的「文件说明」由乱码修回中文，见 §7；**v2.4.0 起 GitHub Release 的附件是 mingw 交叉构建件**（本机无 MSVC/SDK，用户裁定，超 3 MB 体积门，见 §1 与 `CHANGELOG.md` v2.4.0 段）。帮助窗步数 9→10→9 的来回属界面文案，不改变部署面；**v2.4.2 只改收藏交互**（点★后条目暂留到下次刷新，见 `doc/DESIGN.md` §0.1 C10）；**v2.4.3 只修两处错误路径**（表格批次破坏收藏分区致「清除」误删收藏、`CF_TEXT` 分支读回来全空字符），两者**均不涉部署面**）。本文只写"已经在代码或实机上证实过"的行为；凡未跑过的判据一律标 **未验证**，
+> 对应产品 **v2.5.0**（部署面自 v2.0.3 以来只变过三处：接力兜底热键的键位，见 §5；exe 的「文件说明」由乱码修回中文，见 §7；**v2.4.0 起 GitHub Release 的附件是 mingw 交叉构建件**（本机无 MSVC/SDK，用户裁定，超 3 MB 体积门，见 §1 与 `CHANGELOG.md` v2.4.0 段）。帮助窗步数 9→10→9 的来回属界面文案，不改变部署面；**v2.4.2 只改收藏交互**（点★后条目暂留到下次刷新，见 `doc/DESIGN.md` §0.1 C10）；**v2.4.3 只修两处错误路径**（表格批次破坏收藏分区致「清除」误删收藏、`CF_TEXT` 分支读回来全空字符），两者**均不涉部署面**；**v2.5.0 只改设置不落盘**（程序不再读写 `settings.json`），**不涉部署面**）。本文只写"已经在代码或实机上证实过"的行为；凡未跑过的判据一律标 **未验证**，
 > 并与已验证项分开列。步骤 12 的正式验收证据链在 `cpp/scripts/ReleaseChecklist.md`，本文不重复。
 
 ## 1. 两种交付形态
@@ -16,7 +16,7 @@
 **v2.4.0 起 Release 附件的来源变了**：本机没有 MSVC/Windows SDK，`PackageRelease.bat` 第一步（`CleanAndBuild.bat`
 → `vcvars64.bat`）跑不了；用户裁定 GitHub Release 的附件改用 **WSL mingw 交叉构建件**手组装（stage 布局与
 `PackageRelease.bat` 完全一致：`SuperClip.exe` + `README.md` + `CHANGELOG.md` + `installer\*.bat`）。
-它超 3 MB 体积门（v2.4.3 mingw 交叉件实测 3,664,147 B ≈ 3.49 MB），按 `ReleaseChecklist.md` §6 本该走 B→A→C 降级，本轮等于**直接停在
+它超 3 MB 体积门（v2.5.0 mingw 交叉件实测 3,639,549 B ≈ 3.47 MB），按 `ReleaseChecklist.md` §6 本该走 B→A→C 降级，本轮等于**直接停在
 "非 MSVC 件"这一档并如实标注**；README「快速开始」有同一个醒目块。拿到这份件的安装/卸载/数据接管流程与
 MSVC 件**没有任何差别**（同一份源码、同一份资源、静态 CRT、导入表 10 个系统 DLL 零网络库）。
 
@@ -86,7 +86,7 @@ dumpbin /imports    build\Release\SuperClip.exe
 | 隐藏宿主窗口 | `WS_POPUP` + `WS_EX_TOOLWINDOW`，0×0 @(-32000,-32000)；**刻意不用 message-only**，否则收不到 `TaskbarCreated` | `HiddenWindow.cpp:38` |
 | 数据目录 | `%APPDATA%\SuperClip\`（`FOLDERID_RoamingAppData`），不存在则创建 | `AppDirs.cpp` |
 | 条目 | `history.json`（上限 500 条，收藏不参与末位淘汰） | `Config.h` |
-| 设置 | `settings.json`（位置/尺寸 DIP、置顶、粘贴模式、复制模式、筛选、绑定进程名） | 步骤 10 实机结论见 `doc/PROJECT.md` §11 |
+| 设置 | **不落盘（v2.5.0 起）**：视图、粘贴模式、置顶、绑定目标、窗口位置与尺寸一律不持久化，每次启动为默认态；程序不再读写 `settings.json` | 步骤 10 的历史实机结论见 `doc/PROJECT.md` §11 |
 | 日志 | `error.log`：追加写；超过 1 MB 保留尾部 512 KB 重写；轮转任一步失败就放弃轮转（宁可超长也不写坏） | `Log.cpp:60`、`Config.h:20` |
 | 崩溃兜底 | `SetUnhandledExceptionFilter` + `set_terminate` → 记 `error.log`；会话关闭时**不弹窗**（弹窗会卡注销） | `main.cpp:34` |
 | **历史落盘时机** | **变更即落盘**：入列、去重迁移、收藏切换、粘贴标记（沉底）、清除、复位、加载后的规范化顺序——每一处都同步整文件重写；退出链的 `SaveToDisk()` 只是最后一次兜底写。写盘走 `history.json.tmp` + `ReplaceFileW`（失败降级 `MoveFileExW`）的原子替换，强杀最坏只丢"那一次没写完的替换"，不会留半截文件 | `Store.cpp:64/100/126/147/166/178`、`StorageService.cpp:140-166`、兜底 `AppContext.cpp:332` |
@@ -103,14 +103,14 @@ dumpbin /imports    build\Release\SuperClip.exe
 字段名与形态与 .NET 版一致，直接换二进制即可，不需要迁移工具。顺序：
 
 1. 退出运行中的旧版（托盘「退出」）。
-2. 备份 `%APPDATA%\SuperClip\history.json` 与 `settings.json`（复制到其他目录，别原地改名）。
+2. 备份 `%APPDATA%\SuperClip\history.json` 与 `error.log`（复制到其他目录，别原地改名）。`settings.json` 自 v2.5.0 起已不再使用，老文件可留可删，不影响程序。
 3. 放回/保持同名文件，启动 C++ 版 `SuperClip.exe`。
 4. 核对列表条目数与顺序一致、收藏标记仍在。
 5. 通过后删除备份。
 
 互读验证做过一次（`doc/PROJECT.md` §11 步骤 3 判据：C++ 写出的 `history.json` 能被 .NET 版读回）。
 2026-10-05 另有一条旁证：**用户真实生产数据（135 条）被本版完整读回**（重启日志 `启动完成，条目 135 条`，
-且 `按进程名恢复绑定` 在真实 `settings.json` 上生效）——但那 135 条是本 C++ 版自己写的，属**跨版本连续性**证据，
+且 `按进程名恢复绑定` 在真实 `settings.json` 上生效——**此条为 v2.4.3 及更早的历史结论；v2.5.0 起已取消进程名恢复绑定**）——但那 135 条是本 C++ 版自己写的，属**跨版本连续性**证据，
 **不等于** ".NET 写的文件被 C++ 读"。后者仍只有合成数据覆盖，真实 .NET 生产文件的整机接管演练 **未验证**。
 
 ## 7. 故障排查
@@ -120,7 +120,7 @@ dumpbin /imports    build\Release\SuperClip.exe
 | `Ctrl+`` 无反应 | `error.log` 是否有「热键被占用」 | 用托盘双击呼出；关闭占用该组合键的程序后重启 SuperClip。热键不可用不影响其他功能 |
 | 托盘图标消失 | Explorer 是否重启过 | 正常会自动重挂（`TaskbarCreated`）；仍缺失时看日志有无「NIM_ADD 失败」——那时托盘整体不可用，热键与窗口不受影响 |
 | 列表永远空 / 退出后无历史 | `%APPDATA%\SuperClip` 是否可写、是否有同名**普通文件**占位 | 数据目录拿不到时按设计降级为「仅内存态」且日志不落盘；删掉占位文件重启即可恢复 |
-| 窗口跑到屏幕外（多显示器拔掉后） | `settings.json` 的 `Left/Top` | 越界值（实测 `Left9000/Top7000`）会回默认停靠；手改文件后重启可强制归位 |
+| 窗口跑到屏幕外（多显示器拔掉后） | 窗口位置**不再持久化**（v2.5.0 起） | 每次启动按默认停靠（右缘），不存在历史越界坐标；多显示器拔掉后重启即归位 |
 | 高 DPI 下位置/尺寸不对 | 坐标以 DIP 存储，读侧按当前 DPI 换算 | 150%/200% 排版复核仍是遗留项（`doc/PROJECT.md` §11 步骤 6 未闭环），先固定缩放验证 |
 | 装不上 | 是否提权 | `install.bat`/`uninstall.bat` 都要求管理员；便携版不需要 |
 | 属性面板/任务管理器的「文件说明」显示成 `SuperClip è¶…çº§å‰ªè´´æ…` | exe 的 `VersionInfo.FileDescription`；用 PowerShell 按**码点**读回，别看控制台文本（cp936 管道会把结论骗反） | **v2.3.4 已修**：根因是 `src/res/app.rc`（无 BOM UTF-8）缺编码声明，构建机 ANSI 代码页非 936 时 windres 会把 UTF-8 字节逐个宽化成拉丁字符；已在文件首行加 `#pragma code_page(65001)`（windres 与 MSVC `rc.exe` 都认）。拿到旧版产物（≤ v2.3.3）时只能重新构建，**改不了已出包的 exe**。此缺陷纯外观，不影响任何功能。MSVC 出包路径**未验证**（本机无 SDK） |
@@ -146,7 +146,7 @@ dumpbin /imports    build\Release\SuperClip.exe
 |---|---|---|
 | 1 | MSVC `build.bat` / `CleanAndBuild.bat` 全链 | 本机无 VS2022，只能证明「正确报错并 exit 1」 |
 | 2 | `dumpbin /dependents`、`/imports`、`/resources` | 无 dumpbin |
-| 3 | exe ≤ 3 MB、启动 < 300 ms | 当前交叉产物 3.64 MB（未优化、含图标），不能顶替 |
+| 3 | exe ≤ 3 MB、启动 < 300 ms | 当前交叉产物 ≈ 3.47 MB（未优化、含图标），不能顶替 |
 | 4 | `cl /W4` 零警告、`__try/__except` 兜底路径 | mingw 下该宏不可用 |
 | 5 | AC-7 无运行库 / AC-8 断网 100 次（`ReleaseChecklist.md` §3 的 3.1–3.9） | 无干净 VM |
 | 6 | `install.bat` 提权整链、`uninstall.bat` 真实删除 | 当前 shell 非提权 |

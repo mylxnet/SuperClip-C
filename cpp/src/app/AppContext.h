@@ -1,5 +1,4 @@
 #pragma once
-#include "../core/Settings.h"
 #include "../core/Store.h"
 #include "../services/ClipboardMonitor.h"
 #include "../services/ProcessPicker.h"
@@ -67,27 +66,15 @@ class AppContext {
   HINSTANCE instance() const { return inst_; }
   bool shuttingDown() const { return shuttingDown_; }
 
-  // 设置（技术方案 §11 步骤 10 / 设计方案 §8.3）：变更即落盘，位置与尺寸在退出链里存。
-  const Settings& settings() const { return settings_; }
-  void SaveTopmost(bool on);
-  void SavePasteMode(PasteMode mode);
-  void SaveFilterType(FilterType filter);
-  void SaveCopyMode(CopyMode mode);
-
  private:
   void WireStoreEvents();
   void WirePicker();
   void CapturePasteTarget();            // 唤起前记录目标，比 Deactivated 时机可靠
   void RefreshUi();                     // 绑定态变化后重画靶心与状态栏
-  void ApplySettingsToStore();          // 复制模式/粘贴模式/过滤：读盘 → Store 初值
-  void RestoreBinding();                // 按进程名找回绑定窗口（同名多窗口不自动绑）
-  void PersistSettings();               // settings.json 写盘（失败静默，内存态仍可用）
   void RelayStep(HWND target);          // 两条触发（钩子/热键）共用的推进动作：贴屏幕第一行
 
   HINSTANCE inst_;
   StorageService storage_;
-  std::wstring settingsPath_;
-  Settings settings_;
   std::unique_ptr<Store> store_;
   ClipboardMonitor monitor_;
   TrayService tray_;

@@ -46,6 +46,6 @@ echo.
 echo [ok] installed to %TARGETDIR%\SuperClip.exe
 echo      shortcuts: Start Menu\Programs\SuperClip.lnk, Desktop\SuperClip.lnk
 echo      hotkey:    Ctrl + backquote  (raise / hide the window)
-echo      data:      %APPDATA%\SuperClip  (history.json, settings.json, error.log)
+echo      data:      %APPDATA%\SuperClip  (history.json, error.log)
 echo      no autostart is registered by design; launch it from the shortcut.
 endlocal

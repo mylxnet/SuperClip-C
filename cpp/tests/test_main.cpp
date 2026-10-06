@@ -1,4 +1,4 @@
-// SuperClip C++ · M1 逻辑层单测（技术方案 §9.2/§9.3/§9.4/§9.6）
+// SuperClip C++ · M1 逻辑层单测（技术方案 §9.2/§9.3/§9.4）
 // 自建极简断言框架：原计划用 Catch2，但当前环境离线取不到包 → 内置等价物。
 // 运行前提：Windows（BCrypt / 临时目录）。交叉编译产物需在 Windows 或 Wine 下执行。
 #include "../src/core/ClipItem.h"
@@ -9,7 +9,6 @@
 #include "../src/core/Text.h"
 #include "../src/core/Time.h"
 #include "../src/services/StorageService.h"
-#include "../src/core/Settings.h"
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -694,111 +693,7 @@ void S19_TableBatchKeepsFavoritePartition() {
   CHECK_EQ(reloaded.Collection()[0]->isFavorite, true);
 }
 
-// ============ §9.6 Settings（4 例）============// settings.json 与 .NET v2.0.2 互换读写的硬要求：键名、键序、null 语义都得逐字节对齐。
-std::string ReadAllBytes(const std::wstring& path) {
-  HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (f == INVALID_HANDLE_VALUE) return {};
-  std::string out;
-  char buf[4096]{};
-  DWORD read = 0;
-  if (ReadFile(f, buf, DWORD(sizeof(buf) - 1), &read, nullptr)) out.assign(buf, read);
-  CloseHandle(f);
-  return out;
-}
-
-void WriteRaw(const std::wstring& path, const std::string& bytes) {
-  HANDLE f = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                         FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (f == INVALID_HANDLE_VALUE) return;
-  DWORD written = 0;
-  WriteFile(f, bytes.data(), DWORD(bytes.size()), &written, nullptr);
-  CloseHandle(f);
-}
-
-void G01_DotNetFileReadsAndWritesBackIdentical() {
-  TempStore tmp("cfg1");
-  const std::wstring p = tmp.dir() + L"\\settings.json";
-  // 用户在用的 .NET 版真实产物（逐字节），C++ 必须原样读进、原样写回
-  const std::string dotnet =
-      R"({"Left":1540,"Top":216,"Width":380,"Height":600,"BoundProcessName":null,"Topmost":true,"PasteMode":0,"SplitSingleColumn":false,"FilterType":0})";
-  WriteRaw(p, dotnet);
-
-  const sc::Settings s = sc::LoadSettings(p);
-  CHECK_EQ(s.left, 1540); CHECK_EQ(s.top, 216);
-  CHECK_EQ(s.width, sc::kWinW); CHECK_EQ(s.height, sc::kWinH);
-  CHECK(s.hasRect);
-  CHECK(s.boundProcessName.empty());        // null = 未绑定
-  CHECK(s.topmost);
-  CHECK_EQ(s.pasteMode, 0);
-  CHECK(!s.splitSingleColumn);
-  CHECK_EQ(s.filterType, 0);
-
-  CHECK(sc::SaveSettings(p, s));
-  CHECK_EQ(ReadAllBytes(p), dotnet);        // 键序 + null 语义与 .NET 写出的完全一致
-}
-
-void G02_RoundTripWithBinding() {
-  TempStore tmp("cfg2");
-  const std::wstring p = tmp.dir() + L"\\settings.json";
-  sc::Settings s;
-  s.left = -1024; s.top = 60; s.width = 420; s.height = 700; s.hasRect = true;
-  s.boundProcessName = L"PASTETARGET";
-  s.topmost = false; s.pasteMode = 1; s.splitSingleColumn = true; s.filterType = 3;
-  CHECK(sc::SaveSettings(p, s));
-
-  const sc::Settings back = sc::LoadSettings(p);
-  CHECK_EQ(back.left, -1024); CHECK_EQ(back.top, 60);
-  CHECK_EQ(back.width, 420); CHECK_EQ(back.height, 700);
-  CHECK(back.hasRect);
-  CHECK_EQ(back.boundProcessName, L"PASTETARGET");
-  CHECK(!back.topmost);
-  CHECK_EQ(back.pasteMode, 1);
-  CHECK(back.splitSingleColumn);
-  CHECK_EQ(back.filterType, 3);
-}
-
-void G03_MissingOrCorruptFallsBackToDefaults() {
-  TempStore tmp("cfg3");
-  const std::wstring p = tmp.dir() + L"\\settings.json";
-
-  const sc::Settings none = sc::LoadSettings(p);          // 首次运行：文件不存在
-  CHECK(!none.hasRect);
-  CHECK_EQ(none.width, sc::kWinW); CHECK_EQ(none.height, sc::kWinH);
-  CHECK(none.topmost);                                    // C13 默认置顶
-  CHECK_EQ(none.pasteMode, 0); CHECK_EQ(none.filterType, 0);
-  CHECK(none.boundProcessName.empty());
-
-  WriteRaw(p, "{");                                       // 半截 JSON
-  CHECK(!sc::LoadSettings(p).hasRect);
-  WriteRaw(p, "[]");                                      // 类型不对（照抄 history 的形态）
-  CHECK(!sc::LoadSettings(p).hasRect);
-  WriteRaw(p, "");                                        // 空文件
-  CHECK(!sc::LoadSettings(p).hasRect);
-  CHECK(sc::LoadSettings(L"").width == sc::kWinW);        // 数据目录不可用也不能抛
-  CHECK(!sc::SaveSettings(L"", sc::Settings{}));          // 无路径 → 直接失败，不崩
-  CHECK(!sc::SaveSettings(tmp.dir() + L"\\no-such-dir\\settings.json", sc::Settings{}));
-}
-
-void G04_OutOfRangeAndWrongTypePerField() {
-  TempStore tmp("cfg4");
-  const std::wstring p = tmp.dir() + L"\\settings.json";
-  const std::string json =
-      R"({"Left":99999999,"Top":0,"Width":100,"Height":9000,"Topmost":null,)"
-      R"("PasteMode":true,"FilterType":"2","SplitSingleColumn":1,"Unknown":7})";
-  WriteRaw(p, json);
-  CHECK_EQ(ReadAllBytes(p), json);   // 先自证文件写到位，失败时才分得清「没写进去」和「没解析出来」
-
-  const sc::Settings s = sc::LoadSettings(p);
-  CHECK(!s.hasRect);                    // Left 是荒谬坐标 → 整组位置作废
-  CHECK_EQ(s.left, 0);
-  CHECK_EQ(s.width, sc::kWinW);         // 100 低于 kMinW → 回默认（不做静默放大）
-  CHECK_EQ(s.height, sc::kWinH);        // 9000 超上限 → 回默认
-  CHECK(s.topmost);                     // null → 按 C13 默认 true
-  CHECK_EQ(s.pasteMode, 0);             // true 不是数字序号
-  CHECK_EQ(s.filterType, 0);            // "2" 是字符串
-  CHECK(s.splitSingleColumn);           // 1 走 asBool 的数字分支，认
-}
+// §9.6 Settings 用例已随 settings.json 持久化一并移除（2026-10-06 用户决议）
 
 }  // namespace
 
@@ -847,11 +742,6 @@ int main() {
   Run("§9.4-17 接力取第一行与贴完即止（C15）", S17_RelayTakesFrontRowAndStopsWhenExhausted);
   Run("§9.4-18 点★暂留到下次刷新", S18_FavoriteStaysUntilNextRefresh);
   Run("§9.4-19 表格批次不破坏收藏分区（P0-1 回归）", S19_TableBatchKeepsFavoritePartition);
-
-  Run("§9.6-01 .NET 文件读入并逐字节写回", G01_DotNetFileReadsAndWritesBackIdentical);
-  Run("§9.6-02 全字段往返（含绑定进程名）", G02_RoundTripWithBinding);
-  Run("§9.6-03 缺失/损坏回落默认", G03_MissingOrCorruptFallsBackToDefaults);
-  Run("§9.6-04 越界与类型不符按字段作废", G04_OutOfRangeAndWrongTypePerField);
 
   std::printf("\n用例 %d，断言 %d 项，失败 %d 项 → %s\n", g_cases, g_checks, g_failures,
               g_failures == 0 ? "全部通过" : "存在失败");

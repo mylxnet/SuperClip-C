@@ -10,14 +10,16 @@
 #
 # Usage (on the VM, as the interactive user, SuperClip installed and running):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File ac8_loop.ps1 -ConfirmVm -Iterations 100
-# Prerequisite: paste mode must be QUICK (settings.json PasteMode = 1), the mode button in the
-# title bar. The script prints what it found and aborts if it is not quick mode.
+# Prerequisite: paste mode must be QUICK -- click the mode button in the title bar yourself.
+# v2.5.0 removed settings persistence, so quick mode can no longer be probed from disk; pass
+# -ConfirmQuickMode to attest that you have switched to quick mode manually.
 
 param(
     [int]$Iterations = 100,
     [int]$DelayMs = 350,
     [string]$OutCsv = "",
-    [switch]$ConfirmVm
+    [switch]$ConfirmVm,
+    [switch]$ConfirmQuickMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,7 +28,6 @@ Add-Type -AssemblyName System.Drawing
 
 $appDataDir = Join-Path $env:APPDATA 'SuperClip'
 $histPath = Join-Path $appDataDir 'history.json'
-$setPath = Join-Path $appDataDir 'settings.json'
 $logPath = Join-Path $appDataDir 'error.log'
 
 if (-not $ConfirmVm) {
@@ -54,16 +55,11 @@ if ($existing -gt 5) {
     exit 3
 }
 
-$pasteMode = $null
-if (Test-Path $setPath) {
-    $s = Get-Content $setPath -Raw -Encoding UTF8
-    $m = [regex]::Match($s, '"PasteMode"\s*:\s*(\d)')
-    if ($m.Success) { $pasteMode = [int]$m.Groups[1].Value }
-}
-Write-Output ("preflight: existing_history={0} PasteMode={1} (1=quick)" -f $existing, $pasteMode)
-if ($pasteMode -ne 1) {
-    Write-Output 'ABORT: not in quick paste mode. Click the mode button in the title bar (or set'
-    Write-Output '       PasteMode=1 in settings.json while SuperClip is EXITED), then re-run.'
+Write-Output ("preflight: existing_history={0}" -f $existing)
+if (-not $ConfirmQuickMode) {
+    Write-Output 'ABORT: pass -ConfirmQuickMode after switching SuperClip to QUICK paste mode'
+    Write-Output '       (click the mode button in the title bar). Since v2.5.0 settings are not'
+    Write-Output '       persisted, quick mode cannot be probed from disk.'
     exit 4
 }
 if (-not (Get-Process -Name SuperClip -ErrorAction SilentlyContinue)) {

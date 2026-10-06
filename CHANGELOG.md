@@ -2,13 +2,14 @@
 
 SuperClip 超级剪贴板 · C++ 重写版（Win32 + Direct2D 全自绘，单文件免运行时）· by Mr lin
 
-版本号规则见 `agent.md` 四：每完成一轮改动升一个小版本，`app.rc` 的 `FILEVERSION`、
-`src/core/Config.h` 的 `kVersionText`、界面状态栏三处同号，`PackageRelease.bat` 出包前会强制校验这一条。
+版本号规则见 `agent.md` 四：每完成一轮改动升一个小版本，四处同号（`app.rc` 的 `FILEVERSION`/`PRODUCTVERSION`、
+`src/core/Config.h` 的 `kVersionText`、`app.manifest` 的 `assemblyIdentity`、界面状态栏），`PackageRelease.bat` 出包前会强制校验这一条。
 
 ## 版本历史速览
 
 | 版本 | 日期 | 一句话 |
 |---|---|---|
+| **v2.5.0** | 2026-10-06 | **设置不再持久化**（甲方案＝彻底移除读写代码）：视图 / 粘贴模式 / 置顶 / 绑定目标 / 窗口位置尺寸 / 复制模式 **6 项**全部只在本次运行内有效，每次启动回到默认态；删掉 `Settings.h/.cpp` 及全部设置读写调用，`settings.json` 不再被读写（老文件留在盘上、不被删除），与 .NET 版的**设置**文件互通取消（历史 `history.json` 互通**保留**）；单测删 §9.6 四例（44 → **40 例** / 264 → **219 断言**）。交叉构建 `RC=0`、error 0 / warning 0 |
 | **v2.4.3** | 2026-10-06 | 按全面审查报告修两处**数据安全级缺陷**（P0-1/P0-2，产品行为零改动）：①**表格批次破坏收藏分区致收藏被误删**——`Store::AddFromClipboard()` 表格逐格走 `TakeFavoriteIfDuplicate()` 会把命中去重项的 `isFavorite` 迁移给新格（FR-02），本批里就混进了收藏项；而整块 `insert` 按**单元格顺序**落位，收藏项可能落在非收藏区中间，破坏 `[收藏区\|非收藏区]` 不变式，此后 `ClearAll()` 用「收藏数量」当分界抹尾就会**删掉用户收藏**（违反 C12）。修法＝整块 `insert` 之后补一次 `ApplyOrder()` 恢复分区（与点★同语义，整批皆非收藏时是幂等 no-op），新增 §9.4-19 回归用例；**负向对照已实测：停用该行则 §9.4-19 转红 8 项，且 `ClearAll()` 后剩下的正是非收藏项**——收藏被真的删掉。②**只投 ANSI 文本的老程序，剪贴板读回来全是空字符**——CF_TEXT 分支按 `-1` 求长度（含 NUL）却只给 `wchars-1` 缓冲，`MultiByteToWideChar` 返回 0 一个字符没写、`out` 保持全 `\0`，却仍返回 `ClipRead::Ok`（假成功）；改为**显式长度 + `GlobalSize` 钳位**、缓冲与需求量精确相等，两条提前返回路径都先 `GlobalUnlock`。版本号四处 → `2.4.3.0`。交叉构建 `RC=0`、error 0 / warning 0、单测 **44 例 / 264 断言 / 0 失败** |
 | **v2.4.2** | 2026-10-06 | 改掉「点★收藏后条目当场消失」的突兀感：`Store::ToggleFavorite()` 不再重算显示视图，该行**留在原位、星标立刻翻转**，等**下一次列表刷新**（切视图 / 搜索 / 复制新内容 / 粘贴沉底 / 清除 / 复位 / 重启）才按新状态移出【全部】等页面；**取消收藏对称处理**（在【收藏】里点★也不当场消失）。顺带去掉 `Store::SetFilter()` 的「同值提前返回」——在同一视图再点一次当前过滤项也算一次刷新，否则会出现「点★后点【全部】没反应」。状态栏提示由「已收藏（切换到【收藏】可见）」精简为「已收藏」/「已取消收藏」。版本号三处 → `2.4.2.0`。交叉构建 `RC=0`、编译器 0 error / 0 warning、单测 **43 例 / 246 断言 / 0 失败**（新增 §9.4-18） |
 | **v2.4.1** | 2026-10-06 | 撤销 v2.4.0 的帮助页第 4 步「填表接力」（用户决议直接删除），使用帮助 10 步 → **9 步**；第 3 步「两种粘贴模式」按用户定稿重写（普通模式＝选中需粘贴区域后双击条目；快速模式＝按 `` Alt+` `` 贴最新一条、贴过的沉底；切换独立成行）；修「鼠标划过条目时顶部搜索框闪动」——主窗口缺 `WS_CLIPCHILDREN`，D2D 整窗重绘把原生 `EDIT` 搜索框像素盖掉一帧，加上该样式根治（**产品逻辑零改动**）；版本号三处 → `2.4.1.0`。交叉构建 `RC=0`、单测 42 例 / 228 断言 / 0 失败 |
@@ -27,6 +28,59 @@ SuperClip 超级剪贴板 · C++ 重写版（Win32 + Direct2D 全自绘，单文
 | v2.0.1 及更早 | — | .NET / WPF 版历史，不在本仓库，见 `doc/技术方案.md` |
 
 ## 详细更新日志（按版本倒序）
+
+### v2.5.0 · 2026-10-06
+
+**改动：设置不再持久化——每次启动都是默认态；删除全部设置读写代码，单测减 4 例**
+
+背景：用户原话 **「应用的设置不要记录，每次启动默认是全部显示、粘贴模式是普通、置顶悬浮。」**，
+并要求 **「升级版本为2.5。」**。在甲/乙两个方案里，用户裁定 **甲方案 ＝ 彻底移除设置持久化**
+（**删掉读写代码**，而不是"保留代码只填默认值"）。故本轮是一次**纯删除**：不新增任何行为，
+只把"记住上次状态"这条能力整套摘掉。
+
+**改动要点**
+
+1. **6 项设置全部不再记录**：视图、粘贴模式、置顶（悬浮）、绑定目标进程、窗口位置与尺寸、复制模式
+   ——一律不再落盘。v2.5.0 起每次启动固定为默认态：**【全部】视图 / 普通粘贴模式 / 一般复制模式 /
+   置顶开（悬浮）/ 窗口默认右缘停靠 / 未绑定目标进程**。
+2. **不再读写 `settings.json`**：程序彻底不碰这个文件。若 `%APPDATA%\SuperClip\settings.json`
+   由旧版本生成而仍存在，它**不会被读取，也不会被程序删除**（就留在盘上，由用户自行处置）。
+3. **与 .NET 版的互通范围收窄**：**设置**文件的互通取消；但**历史**文件 `history.json` 的互通
+   **仍然有效**（本轮未动）——两版仍可直接接管同一份历史。
+4. **接力钩子裁决保住**：`TogglePasteMode` 改为调 `ctx_->SyncRelayHook()`，快速模式与接力钩子的
+   联动语义（C15）不受本次删除影响。
+5. **`history.json` 行为不变**：仍「变更即落盘」、「清除只清非收藏项」、「收藏永久保留」。
+
+**改动清单**
+
+- 删除 `src/core/Settings.h`、`src/core/Settings.cpp`。
+- `CMakeLists.txt`：去掉上述源文件。
+- `src/core/Config.h`：删 `kSettingsFile`；`kVersionText` → `L"v2.5.0"`。
+- `AppDirs`：删 `SettingsPath()`。
+- `AppContext`：删全部设置读写（`LoadSettings` / `ApplySettingsToStore` / `RestoreBinding` /
+  `PersistSettings` / `SaveTopmost` / `SavePasteMode` / `SaveFilterType` / `SaveCopyMode`）；
+  `Shutdown()` 不再保存窗口几何；`TogglePasteMode` 改调 `ctx_->SyncRelayHook()`。
+- `MainWindow`：删 `SnapshotGeometry` / `RestoreOrDock`（`WM_CREATE` 直接 `DockToWorkArea`）。
+- `ProcessPicker`：删 `FindWindowByProcess` 等。
+- 版本号四处 → `2.5.0.0`：`src/res/app.rc`（`FILEVERSION` / `PRODUCTVERSION` / 两个 `VERSIONINFO`
+  字符串）、`src/core/Config.h` 的 `kVersionText`、`src/res/app.manifest` 的 `assemblyIdentity`、
+  界面底栏（随 `kVersionText` → `v2.5.0  by Mr lin`）。
+- `tests/test_main.cpp`：删 §9.6「`Settings` 往返」组共 **4 例**（44 例 → **40 例**）。
+- 文档同步：`README.md`、`CHANGELOG.md`、`doc/DESIGN.md`、`doc/PROJECT.md`、
+  `doc/PROJECT_STATE.md`、`doc/TESTING.md`、`doc/DEPLOY.md`。
+
+**验证（本轮已实测）**
+
+- 交叉构建（WSL 内 mingw）`RC=0`，编译器 `error:` 0 行、`warning:` 0 行。
+- 单测 **40 例 / 219 断言 / 0 失败**（v2.4.3 为 44 例 / 264 断言，本轮 **−4 例 / −45 断言**）。
+- 产物 `cpp/build-mingw/SuperClip.exe` = **3,639,549 B（≈3.47 MB）** / MD5 `F4ED65444F798678E36512DDBCD7FD92`；
+  `sc_tests.exe` = 3,258,469 B / MD5 `D0DF3B967B70E6FAC9424250D8C85F08`。
+- 产物 `(Get-Item).VersionInfo` 读回 `FileVersion = ProductVersion = 2.5.0.0`；启动冒烟日志「启动完成，条目 12 条」。
+- 探针：`v2.5.0` 命中、`v2.4.3` 不命中、`settings.json` 不命中、`BoundProcessName` 不命中、`by Mr lin` 命中。
+- 体积账：3,639,549 B ≈ 3.47 MB，**仍超技术方案 §10.3 的 3 MB 目标线**（该线按 MSVC `/MT` + 优化定，
+  mingw 件本来更胖）；MSVC 正式出包与干净 VM 验收（步骤 12 B 段）**仍未做**。
+- **未验证（不得当作已通过）**：5 条真机验收项待用户在自己桌面确认——① 启动即【全部】视图；
+  ② 粘贴模式为普通；③ 置顶悬浮为开；④ 窗口默认停靠右缘；⑤ 运行中改设置后重启不回读（不落盘）。
 
 ### v2.4.3 · 2026-10-06
 

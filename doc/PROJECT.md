@@ -3,7 +3,7 @@
 > 本文件原名 `C++_技术方案.md`，2026-10-05 随 agent.md 九.2 的目录标准移入 `doc/` 并改名（正文未改）。
 > 仓内源码注释里出现的「技术方案 §x」一律指本文；.NET 旧版那份是 `doc/技术方案.md`，两者不要混。
 >
-> 版本：文档 v1.0（冻结于 v2.0.3）· 当前对应产品 **v2.4.3**（§11 步骤 1–12 A 段已落地）· 配套文档：`doc/DESIGN.md`（契约级，含 C1–C13 取值与 T1–T6 决议）
+> 版本：文档 v1.0（冻结于 v2.0.3）· 当前对应产品 **v2.5.0**（§11 步骤 1–12 A 段已落地）· 配套文档：`doc/DESIGN.md`（契约级，含 C1–C13 取值与 T1–T6 决议）
 > 定位：模块接口、消息路由、状态机、渲染管线、降级矩阵、构建与测试的可执行说明
 > 平台：Windows 7 SP1 / 10 / 11 x64 · C++20 / MSVC · 单文件免运行时 exe
 > 冲突处理：本文与 `doc/DESIGN.md` 不一致时以契约文档为准；两者均优先于 `doc/SuperClip_设计规范.html` 的 §1/§10/§11/§12（技术栈章节，已作废）
@@ -81,7 +81,6 @@ ui/  ──▶ core/ ──▶ services/ ──▶ native/ ──▶ Win32/D2D/D
 | `src/core/TableParser.h/.cpp` | `IsTable` / `Parse` / `Cell` | 110 |
 | `src/core/Sha256.h/.cpp` | BCrypt 封装 + 十六进制 | 60 |
 | `src/core/Store.h/.cpp` | 列表状态机（去重/分区/沉底/上限/过滤/搜索/事件） | 340 |
-| `src/core/Settings.h/.cpp` | `settings.json` DTO 与读写 | 130 |
 | `src/core/Time.h/.cpp` | naive 本地时间 ↔ UTC ↔ ISO 串 | 90 |
 | `src/core/Text.h/.cpp` | UTF8↔16、全角半角+ASCII 折叠、宽字符 trim/split | 140 |
 | `src/native/*.h` | 句柄 RAII（§4.1）、剪贴板、前台、键盘、热键、光标、DPI/DWM 动态加载 | 420 |
@@ -89,7 +88,7 @@ ui/  ──▶ core/ ──▶ services/ ──▶ native/ ──▶ Win32/D2D/D
 | `src/services/PasteService.h/.cpp` | 写盘剪贴板 + 三段夺前台 + SendInput 阶段机 | 220 |
 | `src/services/StorageService.h/.cpp` | history.json 原子读写与容错 | 210 |
 | `src/services/TrayService.h/.cpp` | `Shell_NotifyIcon` + 菜单 + `TaskbarCreated` 自愈 | 210 |
-| `src/services/ProcessPicker.h/.cpp` | WH_MOUSE_LL 点选 + 光标替换 + 超时/锁屏取消；`FindWindowByProcess` 按进程名找回绑定窗口（§8.3，唯一候选才返回） | 230 |
+| `src/services/ProcessPicker.h/.cpp` | WH_MOUSE_LL 点选 + 光标替换 + 超时/锁屏取消（**v2.5.0 起绑定不再持久化，原 `FindWindowByProcess` 按进程名找回绑定窗口的能力随设置持久化一并移除**） | 230 |
 | `src/services/RelayService.h/.cpp` | **（v2.2.0 引入 / v2.3.0 无开关，C15）** WH_MOUSE_LL 接力钩子：只管"机制"——**幂等重装**的装/卸、Alt 判定、去重、`PostMessage` 投递目标根窗。**不含策略**（该不该装、取哪条、贴到哪、怎么提示的裁决全在 `AppContext::SyncRelayHook()`）；进程内 `instance_` 转发回调 | 43 + 75 |
 | `src/ui/MainWindow.h/.cpp` | 窗口类、消息路由、命中分发、焦点/模式编排 | 938 |
 | `src/ui/ListRenderer.h/.cpp` | 行测量、TextLayout 缓存、绘制、滚动 | 430 |
@@ -98,7 +97,7 @@ ui/  ──▶ core/ ──▶ services/ ──▶ native/ ──▶ Win32/D2D/D
 | `src/ui/Widgets.h/.cpp` | `EDIT`（占位自绘）、自绘按钮/菜单（步骤 9+ 才建，气泡已落 `HoverTip`） | 180 |
 | `src/ui/HelpWindow.h/.cpp` | 9 步模态引导（v2.4.0 曾加「填表接力」页，v2.4.1 删除） | 150 |
 | `src/res/app.rc`、`manifest.xml` | 图标、`VERSIONINFO`、DPI/comctl6 | 90 |
-| `tests/*` | 单测：42 例（§9.2/9.3/9.4/9.6；§9.1 的"33 例/Catch2"是步骤 10 前的旧口径，见下方备注）。**用例数不再写死在源码里**：`Run()` 自增 `g_cases`，末尾一行打印实测值 | 759 |
+| `tests/*` | 单测：40 例（§9.2/9.3/9.4；§9.1 的"33 例/Catch2"是步骤 10 前的旧口径，见下方备注）。**用例数不再写死在源码里**：`Run()` 自增 `g_cases`，末尾一行打印实测值 | 759 |
 
 合计约 **4600 行**（.NET 版约 2000 行），差异集中在 `ui/`。
 
@@ -223,8 +222,8 @@ DoPaste(item, moveToEnd, targetOverride = nullptr):        // v2.2.0：接力传
 ```
 作用域裁决 AppContext::SyncRelayHook()          // 唯一装/卸入口，被下面每一个状态变化点调用
   want = Store.pasteMode()==Quick && MainWindow.IsVisible() && !ProcessPicker.picking()
-  调用点：Initialize（落盘模式）· ToggleVisibility 收起分支 · ShowAndFocus · 标题栏最小化按钮 ·
-          SavePasteMode（标题栏文字与右键菜单两条切换共用它）· TogglePick 两条路径 ·
+  调用点：Initialize（默认普通模式）· ToggleVisibility 收起分支 · ShowAndFocus · 标题栏最小化按钮 ·
+          TogglePasteMode（标题栏文字与右键菜单两条切换共用它）· TogglePick 两条路径 ·
           picker_.onPicked / onCanceled · OnSessionUnlock · OnSessionLock/OnEndSession 直接 Disarm
   ├─ want 为假 → RelayService::Disarm(原因)（未挂着时静默早退，不刷日志）
   └─ want 为真 → RelayService::Arm(mainWnd, inst)   // SetWindowsHookExW(WH_MOUSE_LL)
@@ -538,9 +537,9 @@ v2.2.0 有而现在**没有**的三样：闲置定时器（`SetTimer(ID_RELAY_ID
 
 | 消息 | 处理 |
 |---|---|
-| `WM_CREATE` | 存 `this` 到 `GWLP_USERDATA`；建 `EDIT` 子窗（子类化 `EditProc`：占位文字/清除叉号自绘、`EM_SETMARGINS`、回车回投 —— §6.7；`WM_SETFONT`）；建 D2D/DWrite 资源；按 settings 或默认停靠；**v2.3.0：此处不装接力钩子**（钩子只由 `AppContext::SyncRelayHook()` 装卸） |
+| `WM_CREATE` | 存 `this` 到 `GWLP_USERDATA`；建 `EDIT` 子窗（子类化 `EditProc`：占位文字/清除叉号自绘、`EM_SETMARGINS`、回车回投 —— §6.7；`WM_SETFONT`）；建 D2D/DWrite 资源；**v2.5.0 起不再恢复持久化几何，直接按默认右缘停靠**；**v2.3.0：此处不装接力钩子**（钩子只由 `AppContext::SyncRelayHook()` 装卸） |
 | `WM_SIZE` | `renderTarget_->Resize`；重排 `EDIT`/按钮几何；`ListRenderer::Rebuild`；`InvalidateRect(NULL)` |
-| `WM_DPICHANGED` | 采纳 `lParam` 建议矩形 `SetWindowPos`；`SetDpi`；重测所有 `TextLayout`；`Proposed` 与 settings 冲突时以 `LPARAM` 为准 |
+| `WM_DPICHANGED` | 采纳 `lParam` 建议矩形 `SetWindowPos`；`SetDpi`；重测所有 `TextLayout`（**v2.5.0 起无持久化几何，采建议矩形即可，无 settings 冲突分支**） |
 | `WM_DISPLAYCHANGE` `WM_WTSSESSION_CHANGE` | 校验窗口是否仍在某显示器内（否则回默认停靠）；锁屏时 `picker.Cancel()` |
 | `WM_PAINT` | `BeginDraw`→背景→标题栏→工具栏→`PushAxisAlignedClip(视口)`+`SetTransform(0,-scroll)`→行→状态栏→`EndDraw`；`EndDraw` 返回设备丢失 → §6.5 重建 |
 | `WM_ERASEBKGND` | `return 1`（D2D 全量覆盖，防闪烁） |
@@ -656,11 +655,11 @@ enum class FocusOwner { List, SearchEdit };   // EDIT 获焦经 EN_SETFOCUS/EN_K
 | 搜索框 | 真 `EDIT`（`WS_CHILD\|WS_VISIBLE\|ES_AUTOHSCROLL\|WS_BORDER`） | IME 完好；占位文字与**清除叉号都在 `EditProc` 的 `WM_PAINT` 自绘**（`EDIT` 永远盖在父窗之上，父窗画的会被文字盖掉；原记 `EM_SETCUEBANNER` 与落码不符，2026-10-05 订正）；框内有字时右端出现 ✕（16 DIP、距右内缘 6 DIP），`EM_SETMARGINS(EC_RIGHTMARGIN)` 给文字留出叉号位，`WM_LBUTTONUP` 命中叉 → `SetWindowTextW(L"")` 清空，之后由原生 `EN_CHANGE` 接 300ms 防抖；`WM_SETCURSOR` 在叉区换手型；`WM_CTLCOLOR*` 父窗返回白底画刷 |
 | 筛选 | 自绘 `全部▾` 按钮 + `TrackPopupMenuEx` 四项 + 当前项打勾 | 免 `COMBOBOX` 主题割裂（ADR）。按钮文字随当前值变（`全部/文本/表格/收藏 ▾`，按钮宽 60 逻辑px 放不下"表格单元格"，菜单项用全称）；主窗是 `WS_POPUP` 非激活窗，弹出前 `SetForegroundWindow`、返回后 `PostMessage(WM_NULL)`，否则点窗口外菜单不消失 |
 | 清除/复位/靶心/标题栏按钮 | 全自绘 + `HitZone` | 无子 HWND，减少 NC 处理。**清除**（2026-10-04 C12）只删非收藏区、无确认框，删完在状态栏给 3s 提示"已清除 N 条，收藏 M 条永久保留"（复用 `ID_STATUS_HINT`）——收藏在【全部】视图本就不可见，不提示会看起来按了没反应 |
-| 置顶 | `MainWindow::topmost_` **默认 true**，`DockToWorkArea` 启动即 `HWND_TOPMOST`；★ 按钮切 `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`，开启态在图标下画青色下划线 | 2026-10-04 用户指定"应用打开默认浮于各窗口最上层"（原 `false` 是步骤 8 遗留）。`Topmost` 落盘要等步骤 10 `SettingsService`，本轮固定"每次启动都开" |
+| 置顶 | `MainWindow::topmost_` **默认 true**，`DockToWorkArea` 启动即 `HWND_TOPMOST`；★ 按钮切 `SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST)`，开启态在图标下画青色下划线 | 2026-10-04 用户指定"应用打开默认浮于各窗口最上层"（原 `false` 是步骤 8 遗留）。`Topmost` 落盘要等步骤 10 `SettingsService`，本轮固定"每次启动都开"；**v2.5.0 起设置不再持久化，`Topmost` 恒为启动默认开（该落盘计划已移除，见 doc/DESIGN.md §8.3）** |
 | 列表 | 全自绘 | 无 UIA（N1） |
 | 标题栏应用图标 | `ID2D1Bitmap`（GDI 取像素） | v2.1.0；纯装饰、不参与 `HitZone`，模式文字起点因此改为 `kModeLeft = kPad + 18 + 6`，绘制与命中同用一个常量 |
 | 状态栏署名 `by Mr lin` | 自绘文字 + `HitZone::BtnSignature` | v2.1.0 起单击 `ShellExecuteW("open", kProjectUrl)`；矩形按 DWrite 实度量宽，右侧贴 `ClientW()-kPad`。底栏其余区域是 `Status`，命中即吞掉、不改任何状态（见 §6.2） |
-| 主窗右键菜单 | `MainWindow::ShowMainMenu()`：`CreatePopupMenu` **三项 + 一条分隔线**（粘贴模式 / 复制模式 / ─── / 使用帮助）+ `TrackPopupMenuEx(TPM_RETURNCMD\|TPM_LEFTALIGN\|TPM_TOPALIGN)` | 步骤 11（2026-10-04）建三项。**"严格三项"是当时的用户裁定**：置顶已有标题栏 ★，清除/复位带确认链、误触代价与开关不对等，不进菜单。v2.2.0（2026-10-05）曾加第 3 项「填表接力」（理由是"开关型动作要有隐蔽的关闭入口"），**v2.3.0 随无开关改造删除**——接力不再是开关，菜单里再放一项就是一个点了没用的条目。项文字按当前状态生成并写明点击后果（"粘贴模式：普通（点此切到快速）"），取消即零改动。与筛选菜单同一套 `SetForegroundWindow` 前置 + `PostMessage(WM_NULL)` 收尾（主窗是 `WS_POPUP` 非激活窗）。复制模式点击后 `SaveCopyMode()` 即落盘（§8.3）。**走查判据回到"4 行含分隔线"**；v2.2.0 那次的实拍（`cpp/build-mingw/relay-menu-tight.png`，19:47，5 行含接力项）已作废，v2.3.0 需重拍（`doc/TESTING.md` §5 判据 6） |
+| 主窗右键菜单 | `MainWindow::ShowMainMenu()`：`CreatePopupMenu` **三项 + 一条分隔线**（粘贴模式 / 复制模式 / ─── / 使用帮助）+ `TrackPopupMenuEx(TPM_RETURNCMD\|TPM_LEFTALIGN\|TPM_TOPALIGN)` | 步骤 11（2026-10-04）建三项。**"严格三项"是当时的用户裁定**：置顶已有标题栏 ★，清除/复位带确认链、误触代价与开关不对等，不进菜单。v2.2.0（2026-10-05）曾加第 3 项「填表接力」（理由是"开关型动作要有隐蔽的关闭入口"），**v2.3.0 随无开关改造删除**——接力不再是开关，菜单里再放一项就是一个点了没用的条目。项文字按当前状态生成并写明点击后果（"粘贴模式：普通（点此切到快速）"），取消即零改动。与筛选菜单同一套 `SetForegroundWindow` 前置 + `PostMessage(WM_NULL)` 收尾（主窗是 `WS_POPUP` 非激活窗）。复制模式点击后仅改内存态、**v2.5.0 起不再落盘**（下次启动仍回到「一般」，见 doc/DESIGN.md §8.3）。**走查判据回到"4 行含分隔线"**；v2.2.0 那次的实拍（`cpp/build-mingw/relay-menu-tight.png`，19:47，5 行含接力项）已作废，v2.3.0 需重拍（`doc/TESTING.md` §5 判据 6） |
 | 帮助窗 | 独立无边框 `WS_POPUP`（`WS_EX_TOOLWINDOW\|TOPMOST`、owner=主窗），D2D 绘制 10 步 + 上一步/下一步/关闭按钮 | 入口：右键菜单「使用帮助」。420×300 逻辑px，贴主窗**左侧**（放不下回落右侧/居中，再 `FitRectToDesktop`）。模态用 `EnableWindow(主窗, FALSE)`，**不起嵌套消息循环**；首末位钳住且按钮禁用，重开回 `1 / 9`；`Esc`/关闭 还原主窗并 `SetFocus`。步骤 11 实机已验翻页（鼠标与 `VK_RIGHT`）、钳位、模态、还原；DPI 150%/200% 排版未验 |
 
 ---
@@ -675,10 +674,10 @@ wWinMain
  ├─ CoInitializeEx(COINIT_APARTMENTTHREADED)
  ├─ SetUnhandledExceptionFilter / set_terminate
  ├─ AppContext.Init:
- │    StorageService.EnsureDir → Settings.Load → Store.LoadFromDisk → ApplyOrder → Save
+ │    StorageService.EnsureDir → Store.LoadFromDisk → ApplyOrder → Save
  │    TrayService.Create → ClipboardMonitor.Create(+AddListener) → ProcessPicker 就绪
  │    MainWindow.Create(WM_CREATE 内建 D2D/DWrite；失败即弹框退出)
- │    RegisterHotKey → 位置：settings 有效? 采纳 : 右缘垂直居中
+ │    RegisterHotKey → 位置：右缘垂直居中（v2.5.0 起不再恢复持久化几何）
  └─ while(GetMessageW) { Translate; Dispatch; }  → AppContext.Shutdown
 ```
 
@@ -691,7 +690,7 @@ shuttingDown_ = true                       // 先置位：其后所有消息回�
 → ClipboardMonitor.Destroy()               // RemoveClipboardFormatListener → DestroyWindow
 → TrayService.Destroy()                    // NIM_DELETE → DestroyWindow
 → Store::SaveToDisk()                      // 失败静默（变更即落盘，这里只是兜底）
-→ MainWindow::SnapshotGeometry + PersistSettings → MainWindow::Destroy()   // 主窗内部注销两把热键
+→ MainWindow::Destroy()                    // v2.5.0 起不再保存窗口几何（设置不持久化）；主窗内部注销两把热键
 → PostQuitMessage → ReleaseMutex/CloseHandle → CoUninitialize
 ```
 **顺序依据**：两个钩子必须在**主窗销毁之前**卸掉——LL 钩子的回调投给 `mainWnd_`，窗先没了指针就悬空；
@@ -739,7 +738,7 @@ shuttingDown_ = true                       // 先置位：其后所有消息回�
 ### 9.1 结构与构建
 `tests/test_main.cpp` 自带极简断言器（`CHECK/CHECK_EQ` + 计数汇总），**不引 Catch2 也不引任何第三方**（守住 §1.1 的零依赖红线）；目标 `sc_tests`（`add_executable(sc_tests ...)`，不链 d2d/dwrite）。被测范围：`core/` 全部纯函数 + `Store`（`StorageService` 以临时目录注入）。`ui/` 不写单测（无头环境不可行）→ §9.5 手测脚本。
 
-> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **44 例 / 264 断言 / 0 失败**（v2.2.0 加 §9.4-17；v2.3.0 把该例从 8 项断言改写成 6 项，见 §9.4-17；**v2.4.2 打破 v2.3.1–v2.4.1 六轮的「42 例 / 228 断言」同数**——改 `Store::ToggleFavorite()`/`SetFilter()` 行为，新增 §9.4-18「点★暂留到下次刷新」并改写 §9.4-02/-05/-08/-13 的旧判据，净 +1 例 / +18 断言，见 §9.4-18；**v2.4.3 再加 §9.4-19「表格批次不破坏收藏分区」（P0-1 回归）**，净 +1 例 / +18 断言，见 §9.4-19；最近实跑 2026-10-06，产物 `build-mingw/SuperClip-v243.exe` 3,664,147 B / MD5 `6D41787B5CB22B019F0BEA013C439317`）。
+> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **40 例 / 219 断言 / 0 失败**（v2.2.0 加 §9.4-17；v2.3.0 把该例从 8 项断言改写成 6 项，见 §9.4-17；**v2.4.2 打破 v2.3.1–v2.4.1 六轮的「42 例 / 228 断言」同数**——改 `Store::ToggleFavorite()`/`SetFilter()` 行为，新增 §9.4-18「点★暂留到下次刷新」并改写 §9.4-02/-05/-08/-13 的旧判据，净 +1 例 / +18 断言，见 §9.4-18；**v2.4.3 再加 §9.4-19「表格批次不破坏收藏分区」（P0-1 回归）**，净 +1 例 / +18 断言，见 §9.4-19；**v2.5.0 按用户决议彻底移除设置持久化，删除 §9.6 `Settings` 往返组 4 例，净 −4 例 / −45 断言**；最近实跑 2026-10-06，产物 `build-mingw/SuperClip.exe` 3,639,549 B / MD5 `F4ED65444F798678E36512DDBCD7FD92`）。
 
 ### 9.2 TableParser（13 例，对齐原 §12）
 | # | 输入 | 断言 |
@@ -832,15 +831,8 @@ AC-9 （v2.2.0 引入、v2.3.0 改无开关、v2.3.1 修注入批次）快速模
       Explorer 被 kill 后托盘自愈、点选中途锁屏（光标不残留）、任务管理器观察 2 小时句柄不增
 ```
 
-### 9.6 SettingsService（步骤 10 新增 4 例）
-临时目录注入（目录名含秒+毫秒+线程 id+**进程内递增序号**，缺序号会撞名：两个用例共用同一 `%TEMP%` 目录时，先结束的那个 fixture 的 `remove_all` 会删掉后一个正在用的文件，表现为随机红）。
-
-| # | 场景 | 断言 |
-|---|---|---|
-| G01 | 逐字节吃下 .NET v2.0.2 的真实那一行 | 9 个字段全部解析正确；原样再写一次 → 与读入的字节**完全相同**（键顺序、`null` 形态、无 BOM UTF-8） |
-| G02 | 全字段往返（含负坐标与绑定进程名） | `Left:-1024 / Top:60 / 420×700 / PASTETARGET / Topmost:false / PasteMode:1 / Split:true / Filter:3` 存→取逐项相等 |
-| G03 | 缺失 / `{` / `[]` / 空文件 / 空路径 / 不可写目录 | 读侧一律回默认（不抛）；写侧返回 `false` 且不影响主流程 |
-| G04 | 越界与类型不符**按字段**作废 | `Left:99999999` → `hasRect=false`（其余字段仍有效）；`Width:100/Height:9000` → 尺寸回默认；`Topmost:null` → `true`；`PasteMode:true` → `0`；`FilterType:"2"` → `0`；`SplitSingleColumn:1` → `true`；未知键忽略 |
+### 9.6 SettingsService（步骤 10 新增；v2.5.0 已移除）
+v2.5.0 按用户决议彻底移除设置持久化（见 `doc/DESIGN.md` §8.3），该组 4 例（G01 .NET 文件读入并逐字节写回 / G02 全字段往返 / G03 缺失损坏回落默认 / G04 越界与类型不符按字段作废）随 `Settings` 模块一并删除，`test_main.cpp` 已无该组，总用例 44 → 40（219 断言）。
 
 ---
 
@@ -909,7 +901,7 @@ DPI 感知由 `src/res/app.manifest` 内嵌提供，**不设 `VS_DPI_AWARE`**（
 | 7 | 搜索/过滤/收藏/清除/复位/悬浮/收起/关闭 | AC-4/5、FR-06..08/12..14/17 实机走查 |
 | 8 | `PasteService` + `DoPaste` 编排 + 目标捕获 | AC-2/6 三应用实机；1000ms 守护期间复制不重复入列 |
 | 9 | `ProcessPicker`（含 T2） | 点选 Excel 不改变其选区；中途锁屏光标不残留；红/绿状态正确 |
-| 10 | `SettingsService` + 位置/模式恢复 | 重启后位置、模式、置顶、绑定进程名恢复；拔掉副显示器回默认停靠。**2026-10-04 实机结论**：§9.6 四例绿（40 例/214 断言/0 失败）；`Left100/Top120/400×520` 精确还原并原值回写；`Left9000/Top7000` 回默认停靠 `1540,216`；无文件首启＝右停靠+`topmost=True`+普通模式+全部+未绑定，退出时才建默认文件；唯一候选恢复绑定（日志+绿靶心+"已绑定：PasteTarget"）；同名两窗一律不绑（红靶心+状态栏提示）；★ 关→`WS_EX_TOPMOST` 位消失且**立即**落盘→重启仍关→可开回；点模式文字→`PasteMode` 立即落盘。**未验证**：筛选经模态菜单变更后的 `FilterType` 落盘；`SplitSingleColumn` 无 UI 入口 |
+| 10 | `SettingsService` + 位置/模式恢复（**v2.5.0 起设置持久化已移除，见 doc/DESIGN.md §8.3；本行以下为历史里程碑判据**） | 重启后位置、模式、置顶、绑定进程名恢复；拔掉副显示器回默认停靠。**2026-10-04 实机结论**：§9.6 四例绿（40 例/214 断言/0 失败）；`Left100/Top120/400×520` 精确还原并原值回写；`Left9000/Top7000` 回默认停靠 `1540,216`；无文件首启＝右停靠+`topmost=True`+普通模式+全部+未绑定，退出时才建默认文件；唯一候选恢复绑定（日志+绿靶心+"已绑定：PasteTarget"）；同名两窗一律不绑（红靶心+状态栏提示）；★ 关→`WS_EX_TOPMOST` 位消失且**立即**落盘→重启仍关→可开回；点模式文字→`PasteMode` 立即落盘。**未验证**：筛选经模态菜单变更后的 `FilterType` 落盘；`SplitSingleColumn` 无 UI 入口 |
 | 11 | `HelpWindow` + 右键菜单 + 气泡 | 9 步引导可翻页（**v2.4.0 曾扩到 10 步**：新增「填表接力」页；**v2.4.1 按用户决议删掉该页，回到 9 步**）；菜单项文案动态显示当前模式。**2026-10-04 实机结论**：三项菜单在鼠标右键与 `VK_APPS`（锚列表区左上）两路都能弹出，4 项含分隔线、文字随状态翻转（"粘贴模式：普通（点此切到快速）"）；选「粘贴模式」`PasteMode` 0→1→0 落盘、选「复制模式」`SplitSingleColumn` false→true 落盘、取消零改动；帮助窗在主窗左侧 12 逻辑px、420×300、`enabled=False` 证明模态、点「下一步」与 `VK_RIGHT` 均可翻页、`1/9` 与 `9/9` 钳住且按钮禁用、重开回 `1/9`、`Esc` 与「关闭」都还原主窗；搜索框内右键仍是原生 `EDIT` 菜单（15 项）；主窗无回归。**未验证**：① 点选期间不弹菜单——代码有分支，但驱动无法在盲态安全右键（会点到别家窗口），未跑；② `Shift+F10` 按决议不实现；③ 帮助窗 150%/200% DPI 排版（挂步骤 6 遗留）；④ `true→false` 的反向落盘未单独复验。**v2.2.0 变更**：菜单加第 3 项「填表接力」，判据由"4 项含分隔线"改为**"5 项含分隔线"**（粘贴模式 / 复制模式 / 填表接力 / ─── / 使用帮助），本轮**已实拍**（19:47 `VK_APPS` 那一路，见 §6.8 行末与 `doc/TESTING.md` §2 v2.2.0 行）。**v2.3.0 回退**：接力改无开关，该项连同 `HideForRelay()` 一起删除，判据回到**"4 项含分隔线"**（粘贴模式 / 复制模式 / ─── / 使用帮助）；本轮**未实拍**，需随 v2.3.0 走查重拍（`doc/TESTING.md` §5 判据 6） |
 | 12 | 打包脚本 + 干净 VM 验收 | AC-7/8；`dumpbin /dependents` 仅 §附录白名单 DLL |
 | 12 之后 | **v2.1.0**：五项界面修订 + C14 快速模式选中位钉第一行 | 交叉构建 error 0、§9.4 增至 16 例（合计 41 例/222 断言/0 失败）。**2026-10-05 17:01–17:07 实机走查通过**（合成数据、每次点击前 `WindowFromPoint`→`GA_ROOTOWNER` 守卫、`GUARD_FAILS=0`）：图标渲染、图钉两态与 `topmost` True→False→True、✕ 出现/清空、点底栏空白收藏数不变（2→2）、点署名后前台窗标题变 `mylxnet/SuperClip-C`、气泡 `tip_left-win_left=51px` 在行之上；C14 两轮靶窗 dump 各含本轮 token。逐条判据见 `doc/TESTING.md` §2 与 `doc/PROJECT_STATE.md` §6 |

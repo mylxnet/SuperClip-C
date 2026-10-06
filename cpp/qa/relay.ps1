@@ -42,7 +42,6 @@ $targetExe = Join-Path $dir "PasteTarget.exe"
 if ($Exe -ne "") { $scExe = $Exe } else { $scExe = Join-Path $dir "SuperClip.exe" }
 $data = Join-Path $env:APPDATA "SuperClip"
 $histPath = Join-Path $data "history.json"
-$setPath = Join-Path $data "settings.json"
 $logPath = Join-Path $data "error.log"
 $latestBk = Join-Path $env:LOCALAPPDATA "Temp\sc-relay-latest.txt"
 
@@ -179,7 +178,6 @@ if ($Probe -ne "") {
                   " edit=" + $er.L + "," + $er.T + "," + $er.Rt + "," + $er.B)
   } else { Write-Output "host=NONE" }
   Write-Output ("history items=" + (Item-Count $histPath) + " bytes=" + ((Get-Item $histPath -ErrorAction SilentlyContinue).Length))
-  if (Test-Path $setPath) { Write-Output ("settings=" + (Get-Content $setPath -Raw -Encoding UTF8)) }
   $fg = [R]::GetForegroundWindow()
   Write-Output ("fg=" + [R]::Cls($fg) + "|" + [R]::Title($fg))
   Write-Output "log tail:"; Show-Log 12
@@ -189,7 +187,7 @@ if ($Backup -ne "") {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   $bk = Join-Path $env:LOCALAPPDATA ("Temp\sc-relay-" + $stamp)
   New-Item -ItemType Directory -Force -Path $bk | Out-Null
-  foreach ($f in @("history.json", "settings.json", "error.log")) {
+  foreach ($f in @("history.json", "error.log")) {
     $src = Join-Path $data $f
     if (Test-Path $src) { Copy-Item $src (Join-Path $bk $f) -Force }
   }
@@ -209,13 +207,13 @@ if ($Restore -ne "") {
   if (-not $ConfirmCounts) { Write-Output "RESTORE_DRYRUN pass -ConfirmCounts to actually copy"; exit 0 }
   Get-SC | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 900
-  # error.log is part of the triple, so restoring it destroys the run's log evidence.
+  # error.log is in the backup set, so restoring it destroys the run's log evidence.
   # Snapshot the live log next to the backup before overwriting.
   if (Test-Path $logPath) {
     Copy-Item $logPath (Join-Path $bk "error.log.live-before-restore") -Force
     Write-Output ("log snapshotted to " + (Join-Path $bk "error.log.live-before-restore"))
   }
-  foreach ($f in @("history.json", "settings.json", "error.log")) {
+  foreach ($f in @("history.json", "error.log")) {
     $src = Join-Path $bk $f
     if (Test-Path $src) { Copy-Item $src (Join-Path $data $f) -Force }
   }

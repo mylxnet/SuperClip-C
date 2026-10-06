@@ -43,13 +43,8 @@ class ProcessPicker {
   static ProcessPicker* instance_;     // LL 钩子没有用户数据参数，靠进程内单例转发
 };
 
-// 状态栏与 settings 只用进程名、不含文档标题（技术方案 §5.5）：
+// 状态栏只用进程名、不含文档标题（技术方案 §5.5）：
 // 根窗口 → 映像基名大写、去 .exe（EXCEL 而非 EXCEL.xlsx - Excel）。取不到返回空串，绑定仍生效。
 std::wstring ProcessNameOf(HWND hwnd);
-
-// 步骤 10 重启找回绑定：按进程名枚举「可见、无 owner、非工具窗、有标题、非本进程」的顶层窗口。
-// matches 输出候选数；返回唯一候选的句柄，0 个或多个都返回 nullptr ——
-// 多个同名窗口时不猜（2026-10-04 用户决议：不自动绑，靶心保持红色并提示重新点选）。
-HWND FindWindowByProcess(const std::wstring& processName, int& matches);
 
 }  // namespace sc

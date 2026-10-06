@@ -4,7 +4,7 @@ rem SuperClip C++ uninstaller (tech doc 10.3): taskkill, then remove program dir
 rem ASCII ONLY in .bat: cmd.exe decodes with the console codepage (cp936 here), so a UTF-8
 rem Chinese comment makes its lead byte swallow the next character and breaks parsing.
 rem
-rem Never touches user data: %APPDATA%\SuperClip\ (history.json / settings.json / error.log)
+rem Never touches user data: %APPDATA%\SuperClip\ (history.json / error.log)
 rem stays intact by design - it holds the real clipboard history and cannot be recovered once
 rem deleted. A reinstall picks up the same files (format shared with the .NET build).
 

@@ -35,9 +35,4 @@ std::wstring HistoryPath() {
   return dir.empty() ? std::wstring() : dir + L"\\" + kHistoryFile;
 }
 
-std::wstring SettingsPath() {
-  const std::wstring& dir = DataDir();
-  return dir.empty() ? std::wstring() : dir + L"\\" + kSettingsFile;
-}
-
 }  // namespace sc

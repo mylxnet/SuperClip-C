@@ -39,6 +39,11 @@ class ListRenderer {
     Com<IDWriteTextLayout> preview;
     float previewH = 0.f;
     bool truncated = false;
+    // 归属指纹：缓存以 ClipItem* 为键，而 Store 去重是"删旧建新"——新对象可能正好落在
+    // 刚释放的旧对象地址上，仅凭指针会把旧排版当成新条目的排版。故记录内容指纹，
+    // 命中时必须重新确认归属（hash 为空串的极端场景用长度兜底）。
+    std::wstring hash;
+    size_t contentLen = 0;
   };
   const LayoutCache& Measure(const ClipItem& item, float bodyWidth, const Theme& theme);
   const LayoutCache* Cached(const ClipItem& item) const;

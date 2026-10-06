@@ -8,6 +8,5 @@ namespace sc {
 const std::wstring& DataDir();
 
 std::wstring HistoryPath();      // DataDir()\history.json
-std::wstring SettingsPath();     // DataDir()\settings.json（技术方案 §11 步骤 10 起使用）
 
 }  // namespace sc

@@ -61,7 +61,7 @@ constexpr int kHelpTitleH = 40;                 // 顶部标题带（同时是�
 constexpr int kHelpBtnH = 30, kHelpNavBtnW = 76, kHelpCloseBtnW = 56, kHelpBtnGap = 8;
 
 // 与 src/res/app.rc 的 FILEVERSION 同步（PackageRelease.bat 以 app.rc 为准，并校验本行）
-inline constexpr wchar_t kVersionText[]  = L"v2.4.3";
+inline constexpr wchar_t kVersionText[]  = L"v2.5.0";
 // 署名固定（agent.md 四.3：界面上版本号写在署名之前）
 inline constexpr wchar_t kAppSignature[] = L"by Mr lin";
 // 点击署名交给**系统默认浏览器**打开的仓库地址。程序自身仍零网络代码：不链 wininet/winhttp、
@@ -88,7 +88,6 @@ inline constexpr wchar_t kSearchHint[]   = L"搜索…";
 inline constexpr wchar_t kMutexName[]    = L"Local\\SuperClip_SingleInstance_9F3A2B1C";
 inline constexpr wchar_t kDataDirName[]  = L"SuperClip";
 inline constexpr wchar_t kHistoryFile[]  = L"history.json";
-inline constexpr wchar_t kSettingsFile[] = L"settings.json";
 inline constexpr wchar_t kLogFile[]      = L"error.log";
 
 // 自投递消息（WM_APP 基址，避免与系统消息冲突）

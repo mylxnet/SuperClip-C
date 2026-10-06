@@ -148,35 +148,4 @@ std::wstring ProcessNameOf(HWND hwnd) {
   return name;
 }
 
-namespace {
-
-struct FindState {
-  std::wstring name;              // 已转大写、无扩展名
-  std::vector<HWND> hits;
-};
-
-BOOL CALLBACK CollectCandidates(HWND hwnd, LPARAM lp) {
-  auto* st = reinterpret_cast<FindState*>(lp);
-  if (!IsWindowVisible(hwnd)) return TRUE;
-  if (GetWindow(hwnd, GW_OWNER)) return TRUE;              // 从属对话框不是「那个窗口」
-  if (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) return TRUE;
-  if (GetWindowTextLengthW(hwnd) == 0) return TRUE;        // 无标题的宿主窗不参与
-  if (IsOwnWindow(hwnd)) return TRUE;                      // 自己的窗口永远不是目标
-  if (_wcsicmp(ProcessNameOf(hwnd).c_str(), st->name.c_str()) == 0) st->hits.push_back(hwnd);
-  return TRUE;
-}
-
-}  // namespace
-
-HWND FindWindowByProcess(const std::wstring& processName, int& matches) {
-  matches = 0;
-  if (processName.empty()) return nullptr;
-  FindState st{processName, {}};
-  CharUpperW(&st.name[0]);                                 // 与 ProcessNameOf 同口径
-  EnumWindows(&CollectCandidates, reinterpret_cast<LPARAM>(&st));
-  matches = int(st.hits.size());
-  if (matches == 1) return st.hits[0];
-  return nullptr;   // 0 个或多个都不绑：绑错窗口比不绑更糟（2026-10-04 决议）
-}
-
 }  // namespace sc

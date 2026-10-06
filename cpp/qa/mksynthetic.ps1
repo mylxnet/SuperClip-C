@@ -1,4 +1,4 @@
-# Write a FULLY SYNTHETIC history.json + settings.json for the README screenshots.
+# Write a FULLY SYNTHETIC history.json for the README screenshots.
 # Nothing is copied from the real history: every string below is typed-in demo content, which is what
 # makes the resulting PNGs safe to commit under doc/images/ (cpp/build-mingw screenshots show real
 # clipboard content and are gitignored for exactly that reason).
@@ -65,27 +65,12 @@ $rows = @(
 $json = ConvertTo-Json -InputObject $rows -Compress -Depth 4
 [System.IO.File]::WriteAllText((Join-Path $data "history.json"), $json, (New-Object System.Text.UTF8Encoding($false)))
 
-# Settings: default-looking dock, normal paste mode, all-types filter, no process binding, topmost on.
-Add-Type -AssemblyName System.Windows.Forms
-$vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
-$settings = [pscustomobject]@{
-  Left              = [int]($vs.Right - 400)
-  Top               = [int]($vs.Top + 120)
-  Width             = 380
-  Height            = 600
-  BoundProcessName  = ""
-  Topmost           = $true
-  PasteMode         = 0
-  SplitSingleColumn = $false
-  FilterType        = 0
-}
-[System.IO.File]::WriteAllText((Join-Path $data "settings.json"),
-  (ConvertTo-Json -InputObject $settings -Compress), (New-Object System.Text.UTF8Encoding($false)))
+# v2.5.0 (2026-10-06): settings are no longer persisted, so there is no settings.json to fabricate.
+# The app starts with defaults: all-types view / normal paste / topmost on / default dock.
 
 # Refuse to hand back control until the app can actually read what we wrote.
 $roundTrip = Get-Content -Raw -Encoding UTF8 (Join-Path $data "history.json") | ConvertFrom-Json
 Write-Output ("written history bytes=" + (Get-Item (Join-Path $data "history.json")).Length)
-Write-Output ("written settings bytes=" + (Get-Item (Join-Path $data "settings.json")).Length)
 Write-Output ("item_count=" + @($roundTrip).Count + " fav=" + @($roundTrip | Where-Object { $_.IsFavorite }).Count +
               " pasted=" + @($roundTrip | Where-Object { $_.IsPasted }).Count +
               " cells=" + @($roundTrip | Where-Object { $_.Type -eq 1 }).Count)

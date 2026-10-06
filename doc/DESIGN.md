@@ -3,7 +3,7 @@
 > 本文件原名 `C++_设计方案.md`，2026-10-05 随 agent.md 九.2 的目录标准移入 `doc/` 并改名（正文未改）。
 > 仓内其它文档提到的「设计方案 / `DESIGN` / 契约级文档」都指本文。
 >
-> 版本：契约 v1.0（设计冻结于 v2.0.3）· 当前对应产品 **v2.4.3**（M1 步骤 1–12 A 段已落地；逐版增量见 `CHANGELOG.md`，实机状态见 `doc/PROJECT_STATE.md`）
+> 版本：契约 v1.0（设计冻结于 v2.0.3）· 当前对应产品 **v2.5.0**（M1 步骤 1–12 A 段已落地；逐版增量见 `CHANGELOG.md`，实机状态见 `doc/PROJECT_STATE.md`）
 > 平台：Windows 7 SP1 / 10 / 11（x64）· 形态：桌面应用 · 单文件 exe · 零网络
 > 依据：`doc/SuperClip_设计规范.html`（当前 v1.2：FR/AC 契约，含 §4.3/§4.4 的 C7/C10/C12 勘误）+ `doc/技术方案.md`（.NET v2.0.2，行为权威）
 > 状态：**功能契约全部继承；技术栈选型条款作废换为 C++**
@@ -33,7 +33,7 @@
 | C10 | 收藏条目的显示位置 | `FR-08`"收藏项**置顶分组显示**"、`设计规范` §7"收藏项浅黄背景高亮，且始终位于列表前部" | 与"普通列表不应被收藏项长期占位"的诉求冲突 | **收藏条目只在【收藏】视图显示**，`全部/文本/表格单元格` 三个视图一律剔除（2026-10-04 用户决议）。数组的 `[收藏区 \| 非收藏区]` 分区不变式**原样保留**——持久化顺序、`Boundary()` 插入位、`MoveToBack` 沉底、FR-04 末位淘汰都依赖它，改的只是 `RebuildDisplay()` 的过滤条件；收藏区/普通区之间的分隔线随之删除（`Theme::Separator` 画刷一并移除）。**v2.4.2 修订交互（2026-10-06 用户决议）**：用户报障「点★后条目当场消失有点突兀，要求不立即消失、下次刷新时才从【全部】等页面移出」。改法＝`Store::ToggleFavorite()` 只做「翻转 → `ApplyOrder()` → 落盘 → `Emit(FlagsChanged)`」，**不再调 `RebuildDisplay()`**——该条留在屏幕原位、星标立刻翻转，等到**下一次任何刷新**（`SetFilter` / `ApplySearch` / `AddFromClipboard` / `PasteDone` / `ClearAll` / `Reset` / `LoadFromDisk`）才按新状态剔出【全部】等视图；取消收藏对称。为此顺带去掉 `Store::SetFilter()` 的**同值提前返回**（否则点★后点【全部】不重算）。**代价（既定、已告知用户）**：点★到下次刷新之间 `display_` 与 `filter_` 允许暂时不自洽；状态栏提示随之由「已收藏（切换到【收藏】可见）」精简为「已收藏」，`ID_STATUS_HINT` 3s 自动消隐不变。分区不变式与"收藏只在【收藏】视图"这条过滤口径本身未动。单测 §9.4-18 |
 | C11 | 表格来源标注是否上屏 | 本文 §7 曾写"正文下方小字浅蓝 `#5B9BD5` 标注 `来自表格：第 X 行 第 Y 列`"（该色值本身是 2026-10-04 上午刚按用户意见从 `#1E88E5` 调浅的） | 用户复核后认为它"影响整体美观度，而且也没有什么实际意义" | **标注不再绘制**，行高不再随标注浮动（技术方案 §6.4 的 `cardHeight` 去掉 `kLabelGap + kLabelH` 项）；`kLabelH`/`kFontLabel`/`Theme::Label()`/`LabelText()`/`labelPasted_` 全部删除。**但仍是搜索字段**（用户同一次决议补充"不显示，但仍参与搜索"）：`SourceLabel()`、`foldLabel`、`RebuildDisplay()` 的第二个 `ContainsFolded` 与 `SourceRow/SourceCol` 持久化一律保留，单测 §9.3-06/07/08（标注文本）+ §9.4-14（隐藏字段命中）共同钉住 |
 | C12 | 「清除」是否清掉收藏 | `FR-13`"清空所有记录（**含收藏**）" | 与 `FR-08`"收藏……**不参与清理**"直接矛盾（规范自身两处口径相反），用户裁定收藏要永久保存 | **`ClearAll()` 只删非收藏区**，收藏区原序保留并落盘，返回值改为"实际删除条数"；清除后在状态栏给 3s 提示（收藏在【全部】视图不可见，不提示会像"按了没反应"）。想彻底删一条收藏：**先取消收藏 → 再按清除**（用户 2026-10-04 选定，不做右键单条删除、不做确认框）。淘汰上限口径不变（`kMaxItems` 只数非收藏区），副作用是收藏数无上限、`history.json` 随之增长。单测 §9.4-15 |
-| C13 | 启动是否置顶 | 设计方案 §8 早写 `Topmost(默认 true)`，代码里 `topmost_ = false`（步骤 8 遗留） | 用户要求"应用打开默认浮于各窗口最上层" | **按 §8 补齐实现**：`topmost_` 初值 true，`DockToWorkArea` 启动即 `HWND_TOPMOST`，★ 按钮仍可关。`Topmost` 落盘（记住用户关掉的偏好）等步骤 10 `SettingsService`，本轮固定"每次启动都开"。**v2.1.1 补一条系统事实**：本窗**不在前台**时 `SetWindowPos(HWND_TOPMOST)` 会被静默丢弃（返回 TRUE、`gle=0`、`WS_EX_TOPMOST` 不落，2026-10-05 实机坐实，重试与延时均无效），故置顶改为"请求 + 事后断言"两处落地——`Create()` 显示后再断言一次，`WM_ACTIVATE` 里若仍无带则 `PostMessage(WM_APP_RAISE_TOPMOST)` 延后补发（不能在该消息里直接改 z-order，见 `doc/PROJECT_STATE.md` §4 坑 #12） |
+| C13 | 启动是否置顶 | 设计方案 §8 早写 `Topmost(默认 true)`，代码里 `topmost_ = false`（步骤 8 遗留） | 用户要求"应用打开默认浮于各窗口最上层" | **按 §8 补齐实现**：`topmost_` 初值 true，`DockToWorkArea` 启动即 `HWND_TOPMOST`，★ 按钮仍可关。`Topmost` 落盘（记住用户关掉的偏好）等步骤 10 `SettingsService`，本轮固定"每次启动都开"。**v2.1.1 补一条系统事实**：本窗**不在前台**时 `SetWindowPos(HWND_TOPMOST)` 会被静默丢弃（返回 TRUE、`gle=0`、`WS_EX_TOPMOST` 不落，2026-10-05 实机坐实，重试与延时均无效），故置顶改为"请求 + 事后断言"两处落地——`Create()` 显示后再断言一次，`WM_ACTIVATE` 里若仍无带则 `PostMessage(WM_APP_RAISE_TOPMOST)` 延后补发（不能在该消息里直接改 z-order，见 `doc/PROJECT_STATE.md` §4 坑 #12）。**v2.5.0 起设置不再持久化，`Topmost` 恒为启动默认开，上述"`Topmost` 落盘"计划已随 §8.3 一并移除** |
 | C14 | 快速模式的选中位要不要跟着新内容走 | `FR-10` 只写了三个瞬间——"进入默认选中第一条""单击仅选中""空格粘贴后沉底并跳下一条未粘贴"，**没有规定列表期间新复制进来的条目是否移动选中位**；按字面实现就是新条目上屏后选中位仍停在原地，用户每次要先点一下才能贴 | 技术方案 §6 未涉及；旧 .NET 版同样只在进入时选第一条。用户 2026-10-05 提出"绑定后始终自动选中第一行，按空格直接复，不要每次先点再贴" | **Quick 模式下选中位钉在 `display_.front()`**：规则收口在 `Store::AnchorQuickSelection()` 一处（非 Quick 或显示区为空即空操作，已是首行则不发事件），由 `RebuildDisplay()` 末尾自动调用——入列、切换过滤、搜索、`Reset` 都经过它；`TogglePasteMode()` 与点选绑定回调 `AppContext::WirePicker()` 显式补调。粘完沉底后 `front()` 本就是下一条未粘贴，与 `FR-10` 原文不冲突。**粘贴去向不动**（同轮用户选定"仍粘回当前焦点窗口"）：绑定进程→该进程窗口、未绑定→呼出前窗口，`FR-11` 链与契约原文一律不改。普通模式永不自动挪选中位。UI 侧 `MainWindow::ScrollSelectionIntoView()` 在 Quick 下把钉住的行滚进视口，避免高亮在可视区外。单测 §9.4-16 |
 | C15 | 连续填表要不要"绑进程 + 点条目" | 契约（FR-10/FR-11）只定义了"窗口内选中 → 粘回目标"这一条链，**没有"按住某个键点输入框就直接贴"的模式** | 技术方案未涉及。用户 2026-10-05 提出场景：Excel 复制十几个单元格 → 逐个填进另一个 Excel 或网页表单，"不想每次都先点框、再点条目、再按空格" | **新增「接力」**（v2.2.0 引入，**v2.3.0 按用户决议改为无开关**）：作用域＝**快速模式 + 主窗在屏**，主窗全程保持可见，**按住 `Alt` 用左键点目标输入框**＝把**屏幕上看见的第一行**贴进去，贴过靠 C8 沉底、C14 的规则让下一条自动上位；`` Alt+` `` 为兜底（贴到当前前台窗；**v2.3.3 起由 `Ctrl+Alt+空格` 改为此键**，理由见 §6.3）。六条取值由实现者代拍、已告知用户可翻：① 不引入新的队列指针，"取哪条"完全复用 `display_.front()`（逻辑层只剩 `RelayNext()` 一个纯函数，单测 §9.4-17；v2.2.0 的准入函数 `RelayArmable()` 已删）；② **每次取实时第一行**，中途新复制进来的内容插到最先＝先贴新的；③ 列表贴完**停住不循环**（`RelayNext()` 返回 `nullptr` 时只给一句状态栏提示、**不卸钩**；v2.2.0 的"自动解除并要求重新武装"已废）；④ **所见即所贴**：过滤态/搜索态就贴当前显示区第一行，不再要求停在【全部】视图或清空搜索框（v2.3.0 改；v2.2.0 那两条准入正是用户反馈"Alt+点没反应"的直接来源，已连同 `RelayArmable()` 一起删除）；⑤ **不做进程绑定**——刚点中的框所在窗本身就是前台窗，绑定反而破坏"前半程 Excel 后半程浏览器"的跨程序用法，也不与靶心绑定互扰；⑥ 修饰键取 `Alt` 不取 `Ctrl`：注入链本身就是 `Ctrl+V`，`Ctrl+左键` 在 Excel 是**加选多重区域**（粘贴直接报错）、在浏览器是**开新标签**，`Shift+左键` 在 Excel 是扩展选区，都排除；`Alt` 的唯一点是 `Alt+Ctrl+V`＝Excel 选择性粘贴，**v2.3.1 起由 `SendCtrlV(bool releaseCtrl)` 把 `Alt↑`（恒发）并进 `Ctrl+V` 的同一个 `SendInput` 批次化解**（原子投递，物理按键插不进中间），`Ctrl↑` 则在注入那一刻用 `GetAsyncKeyState` 复查；**必须异步态**——接力是在钩子 `PostMessage` 来的 `WM_APP` 里触发的、`Ctrl+V` 又是 60 ms 后由 `WM_TIMER` 注入的，这两种消息都不带可信的键盘状态快照，`GetKeyState` 读到的是上一条按键的遗留值。`Alt↑` 恒发而不按键态判断的理由见 §6.4（点击那一刻已单独抬过一次，注入时读到的是我们自己抬起的结果，判断会漏发）。v2.2.0/v2.3.0 那版"点击那一刻单独补发 `Alt↑`"在真人按住 `Alt` 的手势下无效，是用户报障「粘贴不到 Excel 中」的根因，详见 §5.5 与 §6.4。钩子**必须 `return 0` 放行**（与 `ProcessPicker` 的 `return 1` 吞点击**语义相反**，否则目标拿不到光标）。**契约原文未改**（改 `doc/SuperClip_设计规范.html` 需单独授权，见 §15）。v2.2.0 那版链路**已于 2026-10-05 19:44–20:02 实机走查**（七条逐条结果见 `doc/TESTING.md` §2），其粘贴链路与钩子机制在 v2.3.0 原样复用；**v2.3.0 的新作用域（可见性+模式驱动、所见即所贴、贴完不卸钩）已于同日 21:49–21:58 走查通过**，判据单在 `doc/PROJECT_STATE.md` §6 首行与 `doc/TESTING.md` §5；**但"内容真的落进目标单元格"这条至今没修好**：v2.3.1 只在**单元格编辑态**（焦点控件 `EXCEL6`）成立，**网格仅选中**（`EXCEL7`）贴不进；v2.3.2 再修一刀（批次顺序 + 扫描码）**两个假设双双证伪、连编辑态也失效**，同轮的对照测试证明**注入链在 WPS 网格上从来没成功过**（与 `Alt`、与接力都无关）。用户 2026-10-06 裁定**放弃修改、保持现状**，证据链与下一刀方向见 §6.4 与 `doc/PROJECT_STATE.md` §4 坑 #20 |
 
@@ -267,7 +267,7 @@ v2.1.0 加了最左的应用图标后，模式文字的起点从 `kPad` 挪到 `
 
 | 环节 | 实现 |
 |---|---|
-| 作用域（**没有开关**） | `AppContext::SyncRelayHook()` 是唯一裁决口：`pasteMode()==Quick && window_->IsVisible() && !picker_.picking()` 成立就装钩子，否则卸。调用点是**每一个能改变这三项的入口**：`Initialize()`（落盘的快速模式）、`MainWindow::ToggleVisibility()` 收起分支、`ShowAndFocus()`、`HitZone::BtnMinimize`、`SavePasteMode()`（标题栏模式文字与右键菜单两条切换都经它）、`TogglePick()` 两条路径、`picker_.onPicked/onCanceled`、`OnSessionUnlock()`、`OnEndSession()` |
+| 作用域（**没有开关**） | `AppContext::SyncRelayHook()` 是唯一裁决口：`pasteMode()==Quick && window_->IsVisible() && !picker_.picking()` 成立就装钩子，否则卸。调用点是**每一个能改变这三项的入口**：`Initialize()`（v2.5.0 起不再恢复持久化模式，默认为普通）、`MainWindow::ToggleVisibility()` 收起分支、`ShowAndFocus()`、`HitZone::BtnMinimize`、`TogglePasteMode()`（标题栏模式文字与右键菜单两条切换都经它）、`TogglePick()` 两条路径、`picker_.onPicked/onCanceled`、`OnSessionUnlock()`、`OnEndSession()` |
 | 装钩子 | `RelayService::Arm(mainWnd, inst)`：`SetWindowsHookExW(WH_MOUSE_LL)`；**幂等重装**——已挂着就先 `UninstallHook()` 再重挂。原因：低层钩子被系统按 `LowLevelHooksTimeout` 静默摘掉后**没有任何查询 API**，症状只是"Alt+点不灵且不报错"，重挂是唯一自愈路径。重装不写日志，只有状态跃迁写 |
 | 触发 | 钩子 `OnMouse`：没按 Alt 直接 `return 0` 放行 → 300 ms 内重复（Alt+双击）忽略 → `WindowFromPoint` → `GetAncestor(GA_ROOT)`（**不是 `GA_ROOTOWNER`**：Excel 模态对话框用 ROOTOWNER 会退到主框架窗，`Ctrl+V` 落到框外）→ 是自家窗则忽略 → `PostMessageW(WM_APP_RELAY_TRIGGER, root)`，**`return 0` 放行** |
 | 取条与粘贴 | `AppContext::RelayStep(target)`：校验目标仍有效 → `Store::RelayNext()`＝**所见即所贴的 `display_.front()`**（过滤态/搜索态按屏幕上第一条算，v2.2.0 的「必须【全部】视图 + 搜索框为空」两条准入已随 `RelayArmable()` 一起删除）→ `MainWindow::PasteForRelay(item, target)` → `DoPaste(item, /*moveToEnd*/true, target)` |
@@ -538,11 +538,10 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 
 ## 8. 持久化规范
 
-### 8.1 文件布局（与 .NET 版同目录，可直接接管老用户数据）
+### 8.1 文件布局（与 .NET 版同目录，`history.json` 可直接接管老用户数据）
 ```
 %AppData%\SuperClip\
 ├── history.json     剪贴板历史，顺序 = 当前显示顺序（含沉底）
-├── settings.json    用户设置（v2.0.2 新增项，保留）
 └── error.log        全局异常日志（追加）
 ```
 
@@ -558,18 +557,17 @@ CreateMutexW(nullptr, TRUE, L"Global\\SuperClip_SingleInstance_9F3A2B1C")
 - 原 .NET 版由 `System.Text.Json` 默认将非 ASCII 转义为 `\uXXXX`，C++ 版写侧用不转义的 UTF-8、**读侧必须同时吃 `\u` 转义与明文**（自研 reader 的 `\u` 分支已实现，含代理对拼接，见 `src/core/Json.cpp`；**该分支无专门单测**，互通由实机读旧 `history.json` 验证）。
 - 内存 UTF-16 ↔ 文件 UTF-8 显式转换，禁止依赖 locale。
 
-### 8.3 settings.json（继承 v2.0.2）
-`Left/Top`、`Width/Height`(默认 380/600)、`BoundProcessName`、`Topmost`(默认 true)、`PasteMode`(0 普通)、`FilterType`(0)、`SplitSingleColumn`(false)。持久化时机：窗口关闭存位置/大小/置顶；模式、筛选、复制模式变更即存；绑定目标变更存进程名，启动时按进程名尝试找回窗口句柄恢复绑定。
+### 8.3 用户设置：不持久化（v2.5.0 起）
+v2.0.2–v2.4.3 曾用 `settings.json` 持久化 6 项设置（`Left/Top`、`Width/Height`、`BoundProcessName`、`Topmost`、`PasteMode`、`FilterType`、`SplitSingleColumn`）。
+**v2.5.0 按用户决议彻底移除**（删掉读写代码）：程序**不再读写**该文件，每次启动一律取编译期默认——**全部视图 / 普通粘贴模式 / 一般复制模式 / 置顶开（悬浮）/ 窗口默认右缘停靠 / 未绑定目标进程**。
+老 `settings.json` 若存在则**不被读取、也不被删除**，属遗留文件；与 .NET 版的**设置**文件互通随之取消（`history.json` 互通保留，见 §8.2）。
 
-实现细则（2026-10-04 步骤 10 落定，实机已验）：
+历史行为（v2.4.3 及更早，供追溯；**已随 v2.5.0 移除，仅作历史记录**）：
 
-- **坐标单位是 DIP（96dpi 基准）**，与 .NET 版一致；读时 `MulDiv(x, dpi, 96)` 还原成物理像素，写时 `MulDiv(x, 96, dpi)` 折回。键顺序、`BoundProcessName` 无绑定时写 `null` 的形态都照抄，保证同一份文件两版交替读写不产生差异。
-- **逐字段作废，不整份丢弃**：文件缺失/空/解析失败/非对象 → 全默认；单个字段类型不符或越界（坐标 `|x|>1,000,000`、尺寸不在 `[1,8192]`、`PasteMode` 只吃 0/1、`FilterType` 只吃 0..3）→ 只有该字段回默认并记 `error.log`，未知键忽略。理由：一个坏键不该抹掉用户的窗口尺寸。
-- **还原规则**：有有效矩形且 `FitRectToDesktop` 通过 → 直接落到该物理矩形；矩形完全不在任何显示器上（拔掉副屏）→ 回默认停靠（贴工作区右缘、垂直居中）。`FitRectToDesktop` **只把露不出去的那一边推回工作区**，不得无条件对齐到工作区左上角——实测那样会把用户存的 `100,120` 抹成 `0,0` 并回写。
-- **恢复绑定**：按进程名枚举候选顶层窗（跳过不可见、有 owner、`WS_EX_TOOLWINDOW`、无标题、自身窗口）。**唯一候选才绑**；同名多窗口一律不自动绑，靶心保持红色并给状态栏提示"X 有 N 个窗口，未自动绑定，请点靶心重新选择"（2026-10-04 用户决议：绑错窗口比不绑更糟，与 §5.4"点选才算绑定"同源）；零候选（那个应用没开）静默，进程名留着下次启动再试。
-- **落盘时机的实测差异**：★ 置顶、模式、筛选、绑定变更**即写**，位置/尺寸在退出时写，所以运行中直接读文件看到的 `Left/Top` 可能仍是本次启动时那份。
-- `SplitSingleColumn` 的**写入入口已落地（步骤 11，2026-10-04）**：右键菜单「复制模式」项切换并即写盘（`SaveCopyMode()`）。
-  实机已验该键 false→true 落盘；**反向（true→false）同样走这一条路径，但未单独复验**。表格拆条的 UI 开关仍无独立按钮，只有这一处菜单入口。
+- 坐标单位是 DIP（96dpi 基准），与 .NET 版一致；读时 `MulDiv(x, dpi, 96)` 还原物理像素，写时折回；键顺序、`BoundProcessName` 无绑定时写 `null` 的形态照抄，保证两版交替读写不产生差异。
+- **逐字段作废**：文件缺失/空/解析失败/非对象 → 全默认；单字段类型不符或越界（坐标 `|x|>1,000,000`、尺寸不在 `[1,8192]`、`PasteMode` 只吃 0/1、`FilterType` 只吃 0..3）→ 只有该字段回默认并记 `error.log`，未知键忽略。
+- 还原规则：有有效矩形且 `FitRectToDesktop` 通过则落到该物理矩形；矩形完全不在任何显示器上（拔掉副屏）→ 回默认停靠（贴工作区右缘、垂直居中）。`FitRectToDesktop` **只把露不出去的那一边推回工作区**，不无条件对齐工作区左上角。
+- 恢复绑定：按进程名枚举候选顶层窗（跳过不可见、有 owner、`WS_EX_TOOLWINDOW`、无标题、自身窗口），**唯一候选才绑**，同名多窗口一律不自动绑。
 
 ### 8.4 原子性与容错
 - 写：序列化为紧凑单行 → `history.json.tmp` → 主文件存在则 `ReplaceFileW`，否则 `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`；任一步失败静默并尝试清理 `.tmp`。**持久化失败绝不中断主流程。**
@@ -608,14 +606,14 @@ SuperClip/                            # 本仓库（C++ 重写版；下面是 20
 │  │  ├─ main.cpp                     # 单实例、消息循环、托盘与窗口装配入口
 │  │  ├─ app/AppContext.h/.cpp        # 生命周期、服务编排、ExitApp 清理链
 │  │  ├─ core/ Config.h · IStoreStorage.h（纯头）· ClipItem · Store · TableParser · Text
-│  │  │        Time · Sha256 · Settings · Json（自研极简 JSON，.h/.cpp 成对）
+│  │  │        Time · Sha256 · Json（自研极简 JSON，.h/.cpp 成对）
 │  │  ├─ services/ ClipboardMonitor · PasteService · StorageService · TrayService · ProcessPicker · RelayService（v2.2.0）
 │  │  ├─ native/ AppDirs · Clipboard · HiddenWindow · SystemInfo（dwmapi/shcore 走 LoadLibrary）
 │  │  │        ComPtr.h · Foreground.h · Keyboard.h · Uuid.h · WinUtil.h（RAII 与纯内联工具）
 │  │  ├─ ui/ MainWindow · ListRenderer · Theme · HoverTip · HelpWindow
 │  │  ├─ res/ app.rc（VERSIONINFO + 101 ICON）· app.manifest（PerMonitorV2 + comctl6）· SuperClip.ico
 │  │  └─ util/ Log.h/.cpp
-│  ├─ tests/test_main.cpp             # 42 例，自带极简断言器（无 Catch2）；用例数由 Run() 自增统计，不手抄
+│  ├─ tests/test_main.cpp             # 40 例，自带极简断言器（无 Catch2）；用例数由 Run() 自增统计，不手抄
 │  ├─ tools/PasteTarget.cpp           # 粘贴闭环走查用的极简目标程序
 │  ├─ qa/*.ps1                        # 实机走查驱动（内容一律 ASCII）
 │  ├─ scripts/                        # 发布与验收脚本（CleanAndBuild / PackageRelease / ReleaseChecklist）
@@ -639,7 +637,7 @@ link /SUBSYSTEM:WINDOWS /LTCG
 - `/MT` 静态 CRT → 目标机免装 VC++ 运行库（AC-7）
 - `/utf-8` → 源文件中文常量与执行字符集一致，杜绝乱码
 - manifest 内声明 `PerMonitorV2` DPI 与 comctl32 v6
-- 产物体积预期 **1~3 MB**（原 .NET 版 130 MB，R2 消除）。旁证：mingw 交叉构建实测 `-O1` 3.51 MB、`-O3` 3.56 MB，均未达 3 MB；MSVC `/O2 /GL /MT` 版待步骤 12 B 实测
+- 产物体积预期 **1~3 MB**（原 .NET 版 130 MB，R2 消除）。旁证：mingw 交叉构建实测 `-O1` 3.51 MB、`-O3` 3.56 MB，均未达 3 MB；**v2.5.0 mingw 交叉件实测 3,639,549 B（≈3.47 MB），仍超 3 MB 目标线**；MSVC `/O2 /GL /MT` 版待步骤 12 B 实测
 
 ### 11.2 脚本体系（平移，行为一致）
 | 脚本 | 作用 |
@@ -661,7 +659,7 @@ toast 的标题位（都取 `FileDescription`）随之显示乱码。两个工�
 校验口径：**只认从产物里按码点读回的 `VersionInfo`**，不认控制台文本（cp936 管道会把结论骗反）。
 
 ### 11.3 与原方案的兼容性
-同目录同文件名读写 `history.json`/`settings.json`，C++ 版与 .NET 版可互换使用同一份数据（§8.2 为硬约束）。
+同目录同文件名读写 `history.json`，C++ 版与 .NET 版可互换使用同一份数据（§8.2 为硬约束）；**设置文件自 v2.5.0 起不再共用**（见 §8.3）。
 
 ---
 
@@ -688,8 +686,7 @@ toast 的标题位（都取 `FileDescription`）随之显示乱码。两个工�
 | §9.2 `TableParser` IsTable/Parse | **13** | 表格识别、拆分、空单元格/空行、`\r\n`/`\r` 规范化、`CopyMode` 两态、列号不前移 |
 | §9.3 `Sha256::Hex` + `ClipItem::SourceLabel` | **8** | 已知向量、空内容不计哈希、中文稳定小写 hex、不同内容不同哈希、长文本；普通文本无标注、单元格标注、无行列防御 |
 | §9.4 `Store` 状态机 | **19** | 去重与收藏态迁移、插入位＝收藏数量、末位淘汰（C7）、收藏永不淘汰、稳定分区保序、表格整块不倒序、快速沉底（非收藏／收藏区末位 C8）、存盘重载顺序一致、`Reset` 清灰显＋时间降序（C5）、全角/大小写折叠搜索、过滤+搜索+选中保持、收藏仅在【收藏】视图（C10）、标注不上屏仍参与搜索（C11）、清除保留收藏（C12）、快速模式选中位钉第一行（C14）、接力取第一行与贴完即止（C15）、**点★暂留到下次刷新（v2.4.2，2026-10-06 用户决议）**、**表格批次不破坏收藏分区（P0-1 回归，v2.4.3）** |
-| §9.6 `Settings` 往返 | **4** | .NET 文件读入并逐字节写回、全字段往返（含绑定进程名）、缺失/损坏回落默认、越界与类型不符按字段作废 |
-| **合计** | **44 例 / 264 断言 / 0 失败**（2026-10-06 v2.4.3 交叉构建产物在 Windows 实跑；v2.4.2 为 43 例 / 246 断言，本轮净 +1 例 / +18 断言） | —— |
+| **合计** | **40 例 / 219 断言 / 0 失败**（2026-10-06 v2.5.0 交叉构建产物在 Windows 实跑；v2.4.3 为 44 例 / 264 断言，本轮净 −4 例 / −45 断言，全部来自删除 §9.6 `Settings` 往返组） | —— |
 
 **UI 层不做条件编译式打桩**：需要真实 Windows 桌面实机验证（无法在本环境完成的部分，交付时逐项标注"未验证"）。
 
@@ -786,7 +783,7 @@ toast 的标题位（都取 `FileDescription`）随之显示乱码。两个工�
 | M2 | `TableParser`/`Store`/`Sha256` + 21+12 例单测全绿 | AC-1 逻辑层 |
 | M3 | 自绘窗口与列表、搜索防抖、过滤、收藏、清除、复位、序号、悬浮 | AC-3/4/5、FR-06..08/12..14/17 |
 | M4 | 跨进程粘贴（双层防护、三段夺前台、目标捕获、进程绑定点选） | AC-2/6、FR-09/10/11 |
-| M5 | `settings.json`、DPI、帮助窗、打包与 installer 脚本 | AC-7/8，出包 |
+| M5 | `settings.json`（**v2.5.0 已移除**，见 §8.3）、DPI、帮助窗、打包与 installer 脚本 | AC-7/8，出包 |
 
 M1+M2 完成即有一份"无界面但逻辑可测"的可运行内核；M4 是风险最高阶段（前台锁、UIPI、目标程序差异），单独留缓冲。
 

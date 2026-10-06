@@ -6,20 +6,18 @@
 
 namespace sc {
 
-AppContext::AppContext(HINSTANCE inst)
-    : inst_(inst), storage_(HistoryPath()), settingsPath_(SettingsPath()) {}
+AppContext::AppContext(HINSTANCE inst) : inst_(inst), storage_(HistoryPath()) {}
 
 AppContext::~AppContext() { Shutdown(); }
 
 bool AppContext::Initialize() {
   if (!storage_.EnsureDir()) LogWarn(L"app", L"数据目录不可用，本次运行不持久化");
 
-  settings_ = LoadSettings(settingsPath_);   // 坏文件已在内部回落默认值，不会挡启动
-
   store_ = std::make_unique<Store>(storage_);
   store_->LoadFromDisk();
   if (store_->Corrupted()) LogWarn(L"app", L"历史文件已重置");
-  ApplySettingsToStore();
+  // 设置一律不持久化（2026-10-06 用户决议）：每次启动都是 Store 自身的默认值——
+  // 全部显示 / 普通粘贴模式 / 一般复制模式，绑定目标为空，窗口由 MainWindow 默认停靠。
 
   WireStoreEvents();
   WirePicker();
@@ -29,10 +27,9 @@ bool AppContext::Initialize() {
     LogError(L"app", L"主窗口创建失败，进程退出");
     return false;
   }
-  // 落盘的快速模式在 UI 就绪后补一次「选中位钉第一行」（C14，规则本体在 Store::AnchorQuickSelection）
+  // 启动即普通模式，但快速模式下仍需「选中位钉第一行」这一契约成立，补一次（C14）
   store_->AnchorQuickSelection();
-  RestoreBinding();
-  SyncRelayHook();                             // C15：落盘的快速模式 + 主窗已在屏 → 接力当场可用
+  SyncRelayHook();                             // C15：主窗已在屏，按当前（默认普通）模式裁决接力
 
   monitor_.onText = [this](std::wstring text) { OnClipboardText(std::move(text)); };
   monitor_.isInternalPaste = [this]() { return IsInternalPaste(); };
@@ -52,58 +49,6 @@ void AppContext::WireStoreEvents() {
   store_->onEvent = [this](const StoreEvent& event) {
     if (window_) window_->OnStoreChanged(event);
   };
-}
-
-void AppContext::ApplySettingsToStore() {
-  if (!store_) return;
-  store_->SetCopyMode(settings_.splitSingleColumn ? CopyMode::TableSingleColumn : CopyMode::Normal);
-  store_->SetPasteMode(settings_.pasteMode == 1 ? PasteMode::Quick : PasteMode::Normal);
-  store_->SetFilter(static_cast<FilterType>(settings_.filterType));   // LoadSettings 已钳到 0..3
-}
-
-// 设计方案 §8.3：启动时按进程名尝试找回绑定窗口。
-// 唯一候选才绑；多个候选按 2026-10-04 用户决议一律不自动绑（绑错窗口比不绑更糟），
-// 靶心保持红色并提示重新点选。零候选（那个应用还没开）静默：进程名继续留着，下次启动再试。
-void AppContext::RestoreBinding() {
-  if (settings_.boundProcessName.empty() || !window_) return;
-  int matches = 0;
-  const HWND found = FindWindowByProcess(settings_.boundProcessName, matches);
-  if (found) {
-    boundWindow_ = found;
-    boundProcessName_ = settings_.boundProcessName;
-    LogInfo(L"pick", L"按进程名恢复绑定 " + boundProcessName_ + L"：" + DescribeWindow(found));
-    RefreshUi();
-    return;
-  }
-  if (matches > 1) {
-    LogWarn(L"pick", L"进程 " + settings_.boundProcessName + L" 有 " +
-                        std::to_wstring(matches) + L" 个窗口，不自动绑定");
-    ShowStatusHint(settings_.boundProcessName + L" 有 " + std::to_wstring(matches) +
-                   L" 个窗口，未自动绑定，请点靶心重新选择");
-  }
-}
-
-void AppContext::PersistSettings() { SaveSettings(settingsPath_, settings_); }
-
-void AppContext::SaveTopmost(bool on) {
-  settings_.topmost = on;
-  PersistSettings();
-}
-
-void AppContext::SavePasteMode(PasteMode mode) {
-  settings_.pasteMode = static_cast<int>(mode);
-  PersistSettings();
-  SyncRelayHook();   // C15：模式是接力作用域的一半，标题栏与右键两条切换路径都经这里
-}
-
-void AppContext::SaveFilterType(FilterType filter) {
-  settings_.filterType = static_cast<int>(filter);
-  PersistSettings();
-}
-
-void AppContext::SaveCopyMode(CopyMode mode) {
-  settings_.splitSingleColumn = mode == CopyMode::TableSingleColumn;
-  PersistSettings();
 }
 
 void AppContext::OnClipboardText(std::wstring text) {
@@ -199,8 +144,6 @@ void AppContext::TogglePick() {
   boundWindow_ = lastExternalWindow_ && IsWindow(lastExternalWindow_) ? lastExternalWindow_
                                                                       : nullptr;
   boundProcessName_ = boundWindow_ ? ProcessNameOf(boundWindow_) : std::wstring();
-  settings_.boundProcessName = boundProcessName_;
-  PersistSettings();
   statusHint_ = L"点选不可用，已绑定上次窗口";
   LogWarn(L"pick", L"降级绑定：" + (boundProcessName_.empty() ? L"<无>" : boundProcessName_));
   SyncRelayHook();                              // Start 内部已把主窗恢复显示，接力跟着回来
@@ -287,9 +230,7 @@ void AppContext::RelayStep(HWND target) {
 void AppContext::WirePicker() {
   picker_.onPicked = [this](HWND bound, std::wstring name) {
     boundWindow_ = bound;
-    boundProcessName_ = std::move(name);
-    settings_.boundProcessName = boundProcessName_;   // §8.3：绑定目标变更即落盘进程名
-    PersistSettings();
+    boundProcessName_ = std::move(name);              // 仅内存态：不落盘，下次启动不恢复
     statusHint_.clear();
     LogInfo(L"pick", L"状态栏：已绑定 " + (boundProcessName_.empty() ? L"<进程名未知>"
                                                                      : boundProcessName_));
@@ -330,11 +271,7 @@ void AppContext::Shutdown() {
   monitor_.Destroy();                                 // ① 注销剪贴板监听
   tray_.Destroy();                                    // ② 摘托盘图标
   if (store_) store_->SaveToDisk();                   // ③ 落盘（失败静默，内存态已一致）
-  if (window_) {
-    window_->SnapshotGeometry(settings_);             // ④ 位置/尺寸按 §8.3 在退出时存
-    PersistSettings();
-    window_->Destroy();                               // ⑤ 主窗（内含注销热键）
-  }
+  if (window_) window_->Destroy();                    // ④ 主窗（内含注销热键）
 }
 
 }  // namespace sc

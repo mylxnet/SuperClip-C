@@ -23,7 +23,6 @@ set(SC_COMMON_SOURCES
   src/core/TableParser.cpp
   src/core/Json.cpp
   src/core/Store.cpp
-  src/core/Settings.cpp
   src/services/StorageService.cpp
   src/util/Log.cpp
 )

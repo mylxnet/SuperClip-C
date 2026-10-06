@@ -97,7 +97,16 @@ ListRenderer::ListRenderer(IDWriteFactory* factory) : factory_(factory) {
 const ListRenderer::LayoutCache& ListRenderer::Measure(const ClipItem& item, float bodyWidth,
                                                        const Theme& theme) {
   auto it = cache_.find(&item);
-  if (it != cache_.end()) return it->second;
+  if (it != cache_.end()) {
+    // 命中后必须按内容指纹重新确认归属：Store 去重是"删旧建新"，新对象可能复用刚释放的
+    // 旧对象地址，仅凭指针会把旧排版当成新条目的排版（屏幕上表现为整体错位一格：
+    // 首条内容重复出现、末条内容被挤出屏幕）。
+    if (it->second.hash == item.hash && it->second.contentLen == item.content.size()) {
+      return it->second;
+    }
+    cache_.erase(it);
+    LogWarn(L"render", L"排版缓存指纹不符，已重建（条目地址被复用）");
+  }
 
   if (cache_.size() >= static_cast<size_t>(kMaxLayoutCache)) cache_.clear();   // 正常不触发
 
@@ -111,6 +120,8 @@ const ListRenderer::LayoutCache& ListRenderer::Measure(const ClipItem& item, flo
     entry.truncated = true;
   }
   entry.previewH = std::min(h, kMaxContentH);
+  entry.hash = item.hash;
+  entry.contentLen = item.content.size();
 
   IDWriteTextLayout* raw = nullptr;
   if (factory_ && theme.Body() &&

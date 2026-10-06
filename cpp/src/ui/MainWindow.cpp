@@ -369,7 +369,7 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           LogWarn(L"ui", L"搜索框子类化失败，占位提示不显示");
         }
       }
-      RestoreOrDock(hwnd);
+      DockToWorkArea(hwnd);
       LayoutSearchBox(hwnd);
       RegisterHotkeys(hwnd);
       if (!WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION)) {
@@ -803,6 +803,7 @@ void MainWindow::UnregisterHotkeys(HWND hwnd) {
   }
 }
 
+// 2026-10-06 用户决议：位置/尺寸不再持久化，每次启动都回默认停靠（贴右缘、垂直居中）。
 void MainWindow::DockToWorkArea(HWND hwnd) {
   RECT work{};
   if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0)) return;
@@ -813,43 +814,11 @@ void MainWindow::DockToWorkArea(HWND hwnd) {
   SetWindowPos(hwnd, topmost_ ? HWND_TOPMOST : HWND_TOP, x, y, w, h, SWP_SHOWWINDOW);
 }
 
-// 设计方案 §8.3：位置/尺寸/置顶都吃 settings.json。
-// 存的是 DIP，这里乘 dpi 还原成物理矩形；矩形已完全不在任何显示器上（拔掉副屏）就回默认停靠。
-void MainWindow::RestoreOrDock(HWND hwnd) {
-  if (!ctx_) {
-    DockToWorkArea(hwnd);
-    return;
-  }
-  const Settings& s = ctx_->settings();
-  topmost_ = s.topmost;                     // C13：无文件时默认值就是 true
-  RECT rc{ScaleInt(s.left, dpi_), ScaleInt(s.top, dpi_), 0, 0};
-  rc.right = rc.left + ScaleInt(s.width, dpi_);
-  rc.bottom = rc.top + ScaleInt(s.height, dpi_);
-  if (s.hasRect && FitRectToDesktop(rc)) {
-    SetWindowPos(hwnd, topmost_ ? HWND_TOPMOST : HWND_TOP, rc.left, rc.top,
-                 rc.right - rc.left, rc.bottom - rc.top, SWP_SHOWWINDOW);
-    return;
-  }
-  DockToWorkArea(hwnd);
-}
-
-void MainWindow::SnapshotGeometry(Settings& s) const {
-  if (!hwnd_) return;
-  RECT rc{};
-  if (!GetWindowRect(hwnd_, &rc) || rc.right <= rc.left || rc.bottom <= rc.top) return;
-  s.left = MulDiv(rc.left, 96, int(dpi_));
-  s.top = MulDiv(rc.top, 96, int(dpi_));
-  s.width = MulDiv(rc.right - rc.left, 96, int(dpi_));
-  s.height = MulDiv(rc.bottom - rc.top, 96, int(dpi_));
-  s.hasRect = true;
-}
-
 void MainWindow::SetTopmost(HWND hwnd, bool on) {
   topmost_ = on;
   SetWindowPos(hwnd, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
   InvalidateRect(hwnd, nullptr, FALSE);
-  if (ctx_) ctx_->SaveTopmost(on);   // §8.3：置顶状态变更即落盘（记住用户关掉的偏好）
 }
 
 HitResult MainWindow::HitTest(POINT ptClient) const {
@@ -1209,8 +1178,7 @@ void MainWindow::ShowFilterMenu(HWND hwnd) {
   if (cmd < 1 || cmd > 4) return;      // 取消：不改过滤
   scrollY_ = 0.f;
   const FilterType picked = entries[UINT(cmd) - 1].filter;
-  ctx_->store().SetFilter(picked);
-  ctx_->SaveFilterType(picked);   // §8.3：筛选变更即落盘
+  ctx_->store().SetFilter(picked);   // 仅内存态：下次启动仍回到「全部」
 }
 
 // 步骤 11（§6.8）：右键主窗弹三项原生菜单 —— 粘贴模式 / 复制模式 / 使用帮助。
@@ -1241,8 +1209,7 @@ void MainWindow::ShowMainMenu(HWND hwnd, POINT ptScreen) {
       break;
     case kIdCopy: {
       const CopyMode next = singleCol ? CopyMode::Normal : CopyMode::TableSingleColumn;
-      store.SetCopyMode(next);
-      ctx_->SaveCopyMode(next);          // §8.3：复制模式变更即落盘
+      store.SetCopyMode(next);           // 仅内存态：下次启动仍回到「一般」
       break;
     }
     case kIdHelp:
@@ -1264,7 +1231,7 @@ void MainWindow::TogglePasteMode() {
   } else {
     store.Select(nullptr);   // 普通模式无强制选中
   }
-  ctx_->SavePasteMode(next);   // §8.3：模式变更即落盘
+  ctx_->SyncRelayHook();       // C15：模式是接力作用域的一半，切换后必须重新裁决（仅内存态，不落盘）
   InvalidateRect(hwnd_, nullptr, FALSE);
 }
 

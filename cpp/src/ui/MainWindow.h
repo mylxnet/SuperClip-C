@@ -1,6 +1,5 @@
 #pragma once
 #include "../core/Config.h"
-#include "../core/Settings.h"
 #include "../core/Store.h"
 #include "../native/ComPtr.h"
 #include "../services/PasteService.h"
@@ -53,10 +52,6 @@ class MainWindow {
   void OnStoreChanged(const StoreEvent& event);
   void Repaint() { if (hwnd_) InvalidateRect(hwnd_, nullptr, FALSE); }   // 绑定态变化后刷新靶心/状态栏
 
-  // 步骤 10：退出链里把当前窗口位置/尺寸按 **DIP** 写回 DTO（与 .NET 存法同口径）。
-  // 取不到窗口就保持原值，不覆盖用户已存的位置。
-  void SnapshotGeometry(Settings& s) const;
-
  private:
   static LRESULT CALLBACK Entry(HWND, UINT, WPARAM, LPARAM);
   LRESULT Handle(HWND, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -85,8 +80,7 @@ class MainWindow {
   HitResult HitTest(POINT ptClient) const;
   void SetTopmost(HWND hwnd, bool on);
   void ClampScroll(float viewportH);
-  void DockToWorkArea(HWND hwnd);                 // 贴屏幕右缘、垂直居中（380×600 基准）
-  void RestoreOrDock(HWND hwnd);                  // 步骤 10：有有效落盘位置就采纳，否则默认停靠
+  void DockToWorkArea(HWND hwnd);                 // 每次启动贴屏幕右缘、垂直居中（380×600 基准）
   void RegisterHotkeys(HWND hwnd);
   void UnregisterHotkeys(HWND hwnd);
   float ScaleF() const { return dpi_ / 96.f; }            // DIP → 物理像素
