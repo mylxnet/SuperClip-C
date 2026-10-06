@@ -3,7 +3,7 @@
 > 本文件原名 `C++_技术方案.md`，2026-10-05 随 agent.md 九.2 的目录标准移入 `doc/` 并改名（正文未改）。
 > 仓内源码注释里出现的「技术方案 §x」一律指本文；.NET 旧版那份是 `doc/技术方案.md`，两者不要混。
 >
-> 版本：文档 v1.0（冻结于 v2.0.3）· 当前对应产品 **v2.4.1**（§11 步骤 1–12 A 段已落地）· 配套文档：`doc/DESIGN.md`（契约级，含 C1–C13 取值与 T1–T6 决议）
+> 版本：文档 v1.0（冻结于 v2.0.3）· 当前对应产品 **v2.4.2**（§11 步骤 1–12 A 段已落地）· 配套文档：`doc/DESIGN.md`（契约级，含 C1–C13 取值与 T1–T6 决议）
 > 定位：模块接口、消息路由、状态机、渲染管线、降级矩阵、构建与测试的可执行说明
 > 平台：Windows 7 SP1 / 10 / 11 x64 · C++20 / MSVC · 单文件免运行时 exe
 > 冲突处理：本文与 `doc/DESIGN.md` 不一致时以契约文档为准；两者均优先于 `doc/SuperClip_设计规范.html` 的 §1/§10/§11/§12（技术栈章节，已作废）
@@ -147,7 +147,7 @@ public:
   explicit Store(StorageService&);
   void LoadFromDisk();                       // 读 → ApplyOrder → 规范化保存 → FullReplaced
   void AddFromClipboard(std::wstring_view);   // FR-01/02/05 总入口
-  void ToggleFavorite(const ClipItem*);
+  void ToggleFavorite(const ClipItem*);       // v2.4.2：只「翻转→ApplyOrder→落盘→Emit」，不再调 RebuildDisplay()
   void PasteDone(const ClipItem*, bool moveToEnd);
   size_t ClearAll();  void Reset();   // ClearAll 只清非收藏区（C12），返回删除条数
   void SetFilter(FilterType);  void ApplySearch(std::wstring kw);  // UI 已防抖
@@ -593,7 +593,7 @@ struct HitResult { HitZone zone; const ClipItem* item = nullptr; size_t displayI
 | `ID_FOCUS_WAIT` | MainWindow | 60ms | 等前台焦点稳定 | `InjectCtrlV()`（v2.3.1 引入、v2.3.2 改序：按需 `Ctrl↑` → `Ctrl↓` → `Alt↑`（恒发）→ `V↓` → `V↑` → `Ctrl↑`，同一批 `SendInput`、每事件带扫描码）→ `onDone` |
 | `ID_PASTE_GUARD` | MainWindow | 1000ms | C4 防护兜底 | 清 `isInternalPaste`/`lastPasted` |
 | `ID_PICK` | Picker 宿主 | 8000ms | T2 卡死取消 | `picker.Cancel()` |
-| `ID_STATUS_HINT` | MainWindow | 3000ms | 收藏/取消收藏后条目立刻离开当前视图，提示需要自动消隐 | `AppContext::OnStatusHintTimer()`：清空 `statusHint_` + 重绘 |
+| `ID_STATUS_HINT` | MainWindow | 3000ms | 点★后条目**留在原位**（v2.4.2 起不再当场离开当前视图），状态栏提示仍需自动消隐 | `AppContext::OnStatusHintTimer()`：清空 `statusHint_` + 重绘 |
 
 `SetTimer` 精度下限约 10–16ms，25ms 档实测可用；不引 `winmm!timeSetEvent`（避免多一个 DLL）。所有定时器 ID 唯一，`WM_TIMER.wParam` 分派。
 **v2.3.0 删掉了 `ID_RELAY_IDLE`**（原 5 min 闲置自动解除）：接力改为状态驱动后，"该不该装钩子"每个状态入口都会重新裁决一次，
@@ -739,7 +739,7 @@ shuttingDown_ = true                       // 先置位：其后所有消息回�
 ### 9.1 结构与构建
 `tests/test_main.cpp` 自带极简断言器（`CHECK/CHECK_EQ` + 计数汇总），**不引 Catch2 也不引任何第三方**（守住 §1.1 的零依赖红线）；目标 `sc_tests`（`add_executable(sc_tests ...)`，不链 d2d/dwrite）。被测范围：`core/` 全部纯函数 + `Store`（`StorageService` 以临时目录注入）。`ui/` 不写单测（无头环境不可行）→ §9.5 手测脚本。
 
-> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **42 例 / 228 断言 / 0 失败**（v2.2.0 加 §9.4-17；v2.3.0 把该例从 8 项断言改写成 6 项，见 §9.4-17；最近实跑 2026-10-05 21:26，产物构建于 21:08）。
+> 构建与运行路径（2026-10-05 更新）：`bash build-tests.sh` 走项目专属 WSL 发行版 `superclip` 的 mingw 交叉构建（内部即 `cmake --build`，清单只有 `CMakeLists.txt` 一份），产物 `sc_tests.exe` 拷到 Windows 本机实跑（无 wine）。当前规模 **43 例 / 246 断言 / 0 失败**（v2.2.0 加 §9.4-17；v2.3.0 把该例从 8 项断言改写成 6 项，见 §9.4-17；**v2.4.2 打破 v2.3.1–v2.4.1 六轮的「42 例 / 228 断言」同数**——改 `Store::ToggleFavorite()`/`SetFilter()` 行为，新增 §9.4-18「点★暂留到下次刷新」并改写 §9.4-02/-05/-08/-13 的旧判据，净 +1 例 / +18 断言，见 §9.4-18；最近实跑 2026-10-06，产物 `build-mingw/SuperClip-v242.exe` 3,663,957 B / MD5 `6C7E743558DE23B640158B5EAFFE313F`，与 `release/SuperClip_v2.4.2.exe` 逐字节相同）。
 
 ### 9.2 TableParser（13 例，对齐原 §12）
 | # | 输入 | 断言 |
@@ -770,7 +770,7 @@ shuttingDown_ = true                       // 先置位：其后所有消息回�
 | 7 | `ClipItem{TableCell,2,3}` | `L"来自表格：第 2 行 第 3 列"` |
 | 8 | `TableCell` 但 row/col=0 | `L""`（防御） |
 
-### 9.4 Store 不变式（现 17 例；1–12 是 §11 的规划口径，13–17 随用户决议追加）
+### 9.4 Store 不变式（现 18 例；1–12 是 §11 的规划口径，13–18 随用户决议追加）
 1 重复复制 → 总数不变、位置到新内容位、时间戳更新、`IsFavorite` 迁移。
 2 已有 3 收藏 + 新复制 → 插入下标 == 3。
 3 非收藏 501 → 淘汰**末尾**一项（C7 回归用例，锁死"不删最新"）。
@@ -795,6 +795,14 @@ shuttingDown_ = true                       // 先置位：其后所有消息回�
    （全库总断言 230→228，与 21:26 实跑一致）。
    **单测只锁"取哪条 / 何时停"**——"该不该装钩子"是 UI 状态裁决（`SyncRelayHook` 读 `Store` 的模式与主窗可见性），
    钩子、Alt 判定、注入与夺前台链路都不在逻辑层能力范围内，实机判据见 `doc/TESTING.md` §5。
+18 **点★暂留到下次刷新（v2.4.2，2026-10-06 用户决议）**，三条子场景：
+   ① 在【全部】视图对一条点★ → 该条**当场不离开** `Display()`（仍在原位）、`IsFavorite` 已翻转；
+      随后任一刷新（`SetFilter` / `ApplySearch` / `AddFromClipboard` / `PasteDone` / `ClearAll` / `Reset` / `LoadFromDisk`）才按新状态把它移出【全部】；
+   ② 取消收藏对称：点★（取消）后同样当场不移出、下一次刷新才回位；
+   ③ **切视图与"同值过滤项"都算一次刷新**——`SetFilter(同值)` 不再提前返回（v2.4.2 去掉该短路），点★后点【全部】也会重算。
+   **代价（既定）**：点★到下次刷新之间 `display_` 与 `filter_` **允许暂时不自洽**（见 `doc/DESIGN.md` §0.1 C10）。
+   本用例锁的是**逻辑层的 `display_` 不变式**；"点★后那一行在屏幕上留在原位、星标立刻翻转"属 D2D 自绘层的
+   **像素/交互表现，逻辑层覆盖不到**，须用户真机目视确认（见 `doc/TESTING.md` §5 与 §2 v2.4.2 行）。
 
 ### 9.5 实机验收脚本（UI/粘贴不可单测部分）
 ```

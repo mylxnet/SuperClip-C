@@ -57,6 +57,8 @@ class Store {
   const std::wstring& keyword() const { return keyword_; }
   bool Corrupted() const;
 
+  // 显示视图。注意：点★（ToggleFavorite）只改集合顺序、不重算它——被收藏/取消收藏的那条
+  // 会原位保留到下一次列表刷新为止，故此处可能短暂包含与当前 filter_ 不符的条目。
   const std::vector<const ClipItem*>& Display() const { return display_; }
   // 集合原始顺序 [收藏区 | 非收藏区]，不受过滤/搜索影响：分区不变式与持久化顺序的观测口
   std::vector<const ClipItem*> Collection() const;

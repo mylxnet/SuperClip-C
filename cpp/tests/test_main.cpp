@@ -255,8 +255,11 @@ void S02_NewItemLandsAfterFavorites() {
   store.AddFromClipboard(L"a");
   store.AddFromClipboard(L"b");
   store.AddFromClipboard(L"c");                            // 集合 [c b a]
-  store.ToggleFavorite(store.Display()[0]);                // c 收藏 → 离开普通视图
-  store.ToggleFavorite(store.Display()[0]);                // b 收藏 → 收藏区 [c b]
+  // 2026-10-06 决议：点★当场不动显示视图，所以必须先取指针，不能连着用 Display()[0]
+  const sc::ClipItem* c = store.Display()[0];
+  const sc::ClipItem* b = store.Display()[1];
+  store.ToggleFavorite(c);                                 // c 收藏
+  store.ToggleFavorite(b);                                 // b 收藏 → 收藏区 [c b]
   store.AddFromClipboard(L"new");
   CHECK_EQ(store.TotalCount(), 4u);
   const auto col = store.Collection();
@@ -310,8 +313,10 @@ void S05_StablePartitionKeepsRelativeOrder() {
   store.AddFromClipboard(L"b");
   store.AddFromClipboard(L"c");
   store.AddFromClipboard(L"d");                            // 集合 d c b a
-  store.ToggleFavorite(store.Display()[1]);                // c 收藏 → 集合 c d b a
-  store.ToggleFavorite(store.Display()[1]);                // b 收藏 → 收藏区保持相对序 [c b]
+  const sc::ClipItem* c = store.Display()[1];
+  const sc::ClipItem* b = store.Display()[2];
+  store.ToggleFavorite(c);                                 // c 收藏 → 集合 c d b a
+  store.ToggleFavorite(b);                                 // b 收藏 → 收藏区保持相对序 [c b]
   const auto col = store.Collection();
   CHECK_EQ(col[0]->content, L"c");                         // 收藏区在前，且 c 仍在 b 之前
   CHECK_EQ(col[0]->isFavorite, true);
@@ -319,6 +324,7 @@ void S05_StablePartitionKeepsRelativeOrder() {
   CHECK_EQ(col[1]->isFavorite, true);
   CHECK_EQ(col[2]->content, L"d");                         // 非收藏区相对序不变（d 比 a 新）
   CHECK_EQ(col[3]->content, L"a");
+  store.ApplySearch(L"");                                  // 点★不即时重算，这里主动刷新一次
   const auto& view = store.Display();                      // 普通视图只剩 d a
   CHECK_EQ(view.size(), 2u);
   CHECK_EQ(view[0]->content, L"d");
@@ -358,7 +364,9 @@ void S08_FavoriteSinksToFavoriteZoneEnd() {                // C8
   store.AddFromClipboard(L"c");                            // 集合 c b a
   store.ToggleFavorite(store.Display()[2]);                // a 收藏 → [a | c b]
   CHECK_EQ(store.Collection()[0]->content, L"a");
-  CHECK_EQ(store.Display().size(), 2u);                    // a 已不在普通视图
+  CHECK_EQ(store.Display().size(), 3u);                    // 2026-10-06 决议：点★当场不移出
+  store.ApplySearch(L"");                                  // 下一次列表刷新才按新状态移出
+  CHECK_EQ(store.Display().size(), 2u);
   const sc::ClipItem* favorite = store.Collection()[0];
   store.ToggleFavorite(store.Collection()[1]);             // c 也收藏 → 收藏区 [a c]（稳定分区保序）
   store.PasteDone(favorite, true);
@@ -474,7 +482,7 @@ void S13_FavoritesOnlyInFavoriteView() {                   // 2026-10-04 用户�
   store.ToggleFavorite(store.Collection()[2]);             // plain 收藏 → [plain | c1 c2]
   store.ToggleFavorite(store.Collection()[1]);             // c1 收藏 → 收藏区 [plain c1]
 
-  store.SetFilter(sc::FilterType::All);
+  store.ApplySearch(L"");                                  // 点★不即时重算，这里主动刷新一次
   CHECK_EQ(store.Display().size(), 1u);
   CHECK_EQ(store.Display()[0]->content, L"c2");
   store.SetFilter(sc::FilterType::Text);
@@ -595,6 +603,56 @@ void S17_RelayTakesFrontRowAndStopsWhenExhausted() {
   st2.ApplySearch(L"");
   st2.SetFilter(sc::FilterType::Text);
   CHECK_EQ(st2.RelayNext()->content, L"banana");         // 过滤态：同样取过滤后的第一行
+}
+
+// 2026-10-06 用户决议：点★当场不把该行抽走（避免"条目突然消失"的突兀感），只原地翻星标；
+// 下一次列表刷新才按新状态移出【全部】等页面。收藏与取消收藏对称。
+void S18_FavoriteStaysUntilNextRefresh() {
+  TempStore tmp("s18");
+  sc::Store store(tmp.storage());
+  store.AddFromClipboard(L"a");
+  store.AddFromClipboard(L"b");
+  store.AddFromClipboard(L"c");                            // 普通视图 [c b a]
+  const sc::ClipItem* b = store.Display()[1];
+
+  store.ToggleFavorite(b);
+  CHECK_EQ(b->isFavorite, true);                           // 星标当场翻转（渲染层现读它）
+  CHECK_EQ(store.Display().size(), 3u);                    // 但该行仍留在【全部】原位
+  CHECK(store.Display()[1] == b);
+  CHECK_EQ(store.Collection()[0]->content, L"b");          // 集合层已并进收藏区
+
+  store.ApplySearch(L"");                                  // 任意一次列表刷新
+  CHECK_EQ(store.Display().size(), 2u);                    // 这时才按新状态移出
+  CHECK_EQ(store.Display()[0]->content, L"c");
+  CHECK_EQ(store.Display()[1]->content, L"a");
+  store.SetFilter(sc::FilterType::Favorite);
+  CHECK_EQ(store.Display().size(), 1u);                    // 已落进【收藏】
+  CHECK(store.Display()[0] == b);
+
+  store.ToggleFavorite(b);                                 // 取消收藏：对称处理
+  CHECK_EQ(b->isFavorite, false);
+  CHECK_EQ(store.Display().size(), 1u);                    // 当场也不移出
+  store.SetFilter(sc::FilterType::All);                    // 切视图即刷新
+  CHECK_EQ(store.Display().size(), 3u);                    // 取消收藏的 b 回到普通区
+
+  TempStore tmp2("s18b");
+  sc::Store st2(tmp2.storage());
+  st2.AddFromClipboard(L"x");
+  st2.AddFromClipboard(L"y");                              // [y x]
+  st2.ToggleFavorite(st2.Display()[0]);                    // y 收藏
+  CHECK_EQ(st2.Display().size(), 2u);                      // 当场仍在
+  st2.SetFilter(sc::FilterType::Favorite);                 // 一换视图即按新状态重算
+  CHECK_EQ(st2.Display().size(), 1u);
+  CHECK_EQ(st2.Display()[0]->content, L"y");
+
+  // 2026-10-06 用户决议：同值重复选过滤项也算一次刷新（否则"点★后点【全部】没反应"）
+  TempStore tmp3("s18c");
+  sc::Store st3(tmp3.storage());
+  st3.AddFromClipboard(L"m");
+  st3.ToggleFavorite(st3.Display()[0]);
+  CHECK_EQ(st3.Display().size(), 1u);                      // 当场仍在
+  st3.SetFilter(sc::FilterType::All);                      // 本来就是 All → 同值也必须重算
+  CHECK(st3.Display().empty());
 }
 
 // ============ §9.6 Settings（4 例）============// settings.json 与 .NET v2.0.2 互换读写的硬要求：键名、键序、null 语义都得逐字节对齐。
@@ -748,6 +806,7 @@ int main() {
   Run("§9.4-15 清除保留收藏（C12）", S15_ClearAllKeepsFavorites);
   Run("§9.4-16 快速模式选中位钉第一行", S16_QuickModeAnchorsSelectionToFirstRow);
   Run("§9.4-17 接力取第一行与贴完即止（C15）", S17_RelayTakesFrontRowAndStopsWhenExhausted);
+  Run("§9.4-18 点★暂留到下次刷新", S18_FavoriteStaysUntilNextRefresh);
 
   Run("§9.6-01 .NET 文件读入并逐字节写回", G01_DotNetFileReadsAndWritesBackIdentical);
   Run("§9.6-02 全字段往返（含绑定进程名）", G02_RoundTripWithBinding);

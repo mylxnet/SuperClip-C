@@ -118,13 +118,16 @@ void Store::ApplyOrder() {
                         [](const auto& p) { return p->isFavorite; });   // FR-08：各区相对顺序不变
 }
 
+// 点★只翻转收藏态并按分区重排集合，**不**重算显示视图（2026-10-06 用户决议）：
+// 该条目留在屏幕上原位、星标立刻变化；等下一次任何 RebuildDisplay()（切视图/搜索/
+// 复制新内容/粘贴沉底/清除/复位/重启）才按新状态把它移出【全部】等页面。
+// 代价是这段时间内 display_ 与 filter_ 允许暂时不自洽（点★前已在屏上的那条不会被撤走）。
 void Store::ToggleFavorite(const ClipItem* item) {
   ClipItem* mut = Mutable(item);
   if (!mut) return;
   mut->isFavorite = !mut->isFavorite;
   ApplyOrder();
   storage_.Save(items_);
-  RebuildDisplay();
   Emit(StoreEventKind::FlagsChanged, mut);
 }
 
@@ -180,8 +183,9 @@ void Store::Reset() {
   Emit(StoreEventKind::FullReplaced);
 }
 
+// 2026-10-06 用户决议：同值重复选择也当作一次"刷新"（不再提前返回）——点★暂留的条目
+// 要靠用户主动刷新才移出，若点当前过滤项毫无反应，观感就是"点了没用"。
 void Store::SetFilter(FilterType filter) {
-  if (filter_ == filter) return;
   filter_ = filter;
   RebuildDisplay();
   Emit(StoreEventKind::FullReplaced);

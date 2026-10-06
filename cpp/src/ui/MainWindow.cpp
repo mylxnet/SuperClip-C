@@ -566,11 +566,10 @@ LRESULT MainWindow::Handle(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           break;
         case HitZone::RowStar: {
           store.ToggleFavorite(hit.item);               // FR-08
-          // 收藏条目只在【收藏】视图显示（2026-10-04 用户决议），切换后它会立刻离开当前列表，
-          // 不给去向提示就像被删了一样
+          // 2026-10-06 用户决议：点★当场不移动该行（只在原地翻星标），下一次列表刷新才按
+          // 新状态把它移出【全部】等页面。所以这里只提示状态本身，不承诺"去哪看"。
           if (ctx_) {
-            ctx_->ShowStatusHint(hit.item->isFavorite ? L"已收藏（切换到【收藏】可见）"
-                                                      : L"已取消收藏（切换到【全部】可见）");
+            ctx_->ShowStatusHint(hit.item->isFavorite ? L"已收藏" : L"已取消收藏");
           }
           break;
         }
