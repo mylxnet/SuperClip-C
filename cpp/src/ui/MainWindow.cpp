@@ -285,7 +285,11 @@ bool MainWindow::Create(HINSTANCE inst, AppContext& ctx) {
   }
 
   dpi_ = DpiForWindow(nullptr);
-  const HWND hwnd = CreateWindowExW(WS_EX_APPWINDOW, kMainClass, kWindowTitle, WS_POPUP, 0, 0,
+  // WS_CLIPCHILDREN：搜索框是原生 EDIT 子窗口，父窗重绘必须让开它占的矩形。缺这一条时，
+  // 鼠标划过条目（hover 变化 → 整窗 InvalidateRect）会让 D2D 把搜索框那片像素一起盖掉，
+  // 等 EDIT 自己补画才恢复，视觉上就是搜索栏闪动（2026-10-06 用户报障）。
+  const HWND hwnd = CreateWindowExW(WS_EX_APPWINDOW, kMainClass, kWindowTitle,
+                                    WS_POPUP | WS_CLIPCHILDREN, 0, 0,
                                     ScaleInt(kWinW, dpi_), ScaleInt(kWinH, dpi_), nullptr, nullptr,
                                     inst, this);
   if (!hwnd) {

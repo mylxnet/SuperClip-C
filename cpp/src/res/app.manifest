@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <!-- 技术方案 §10.2：Win7 读 dpiAware，Win10 读 dpiAwareness -->
-  <assemblyIdentity version="2.4.0.0" processorArchitecture="amd64"
+  <assemblyIdentity version="2.4.1.0" processorArchitecture="amd64"
                     name="SuperClip" type="win32"/>
   <description>SuperClip 超级剪贴板</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">

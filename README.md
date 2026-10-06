@@ -4,7 +4,7 @@
 >
 > 复制过的内容它替你留着：一个全局热键呼出列表，选中即粘回你要的地方。不联网、不装运行库、数据只在你自己的机器上。
 
-版本 [v2.4.0](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
+版本 [v2.4.1](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
 
 **平台**：Windows 10 / 11（x64）**已实机走查**。Windows 7 SP1 – 8.1 是代码层面的设计下限
 （`_WIN32_WINNT = 0x0601`、所有 Win8+ API 都动态探测并带回退），**但从未在真机上跑过**，见
@@ -33,7 +33,7 @@
 | 目标绑定 | 默认粘回「呼出前那个窗口」；点工具栏的靶心（「绑定」）进入点选模式，可把目标固定到某个进程 |
 | 填表接力 | **没有开关**：只要处于快速模式、列表在屏幕上，**Alt+左键点哪个输入框，就把看见的第一行贴进那个框**，贴过的沉底、下一条自动上位；新复制的内容自然回到第一行接着贴。收起列表、切回普通模式、锁屏或退出即停止，`` Alt+` `` 是同效兜底。**在 WPS/Excel 的表格网格上仍不可用**，见[已知限制](#已知限制) |
 | 搜索 / 过滤 / 收藏 | 300ms 防抖子串搜索，框内有字时右端出现 ✕，点一下清空；`全部 / 文本 / 表格单元格 / 收藏` 四个视图；收藏只在【收藏】视图出现且不被清除 |
-| 界面 | 380×600 无边框自绘窗口（可拖拽、可缩放、可置顶），标题栏带应用图标；悬停 400ms 在该条**上方**浮现全文气泡；**10 步使用帮助**；单击底栏署名打开本仓库页 |
+| 界面 | 380×600 无边框自绘窗口（可拖拽、可缩放、可置顶），标题栏带应用图标；悬停 400ms 在该条**上方**浮现全文气泡；**9 步使用帮助**；单击底栏署名打开本仓库页 |
 | 系统集成 | 托盘常驻、`` Ctrl+` `` 全局热键、单实例、Per-Monitor V2 DPI 感知、变更即落盘 |
 | 免运行库 | 静态链接 CRT，目标机不需要 .NET，也不需要 VC++ 运行库 |
 
@@ -45,7 +45,7 @@
 
 | ![使用帮助](doc/images/readme-help.png) | ![底栏署名](doc/images/readme-status.png) |
 |---|---|
-| 10 步使用帮助，按钮或 `←` `→` 翻页，`Esc` 关闭 | 底栏放大 2×：状态提示在左，版本号 + `by Mr lin` 在右（单击署名打开仓库页） |
+| 9 步使用帮助，按钮或 `←` `→` 翻页，`Esc` 关闭 | 底栏放大 2×：状态提示在左，版本号 + `by Mr lin` 在右（单击署名打开仓库页） |
 
 | ![悬浮全文气泡](doc/images/readme-tip.png) | ![标题栏两态](doc/images/readme-title.png) |
 |---|---|
@@ -59,14 +59,14 @@
 
 ### 使用者（拿到即用）
 
-1. 到 [Releases](https://github.com/mylxnet/SuperClip-C/releases) 下载 `SuperClip_v2.4.0_portable.zip`，解压到任意目录。
+1. 到 [Releases](https://github.com/mylxnet/SuperClip-C/releases) 下载 `SuperClip_v2.4.1_portable.zip`，解压到任意目录。
 2. 双击 `SuperClip.exe`。托盘出现图标即已在后台记录，无需其他设置。
 3. 在任何应用里按 `Ctrl` + `` ` ``（数字 1 左边那个键）呼出列表，双击一条粘到光标处。
 
 > **这个包是怎么构建的（务必先看）**：附件里的 `SuperClip.exe` 由 **mingw-w64 在 WSL 里交叉编译**产出，
 > 不是 MSVC 构建。原因是开发机上没有 Visual Studio 与 Windows SDK，`cpp/scripts/PackageRelease.bat`
 > 的第 1 步（`CleanAndBuild.bat` → `vcvars64.bat`）跑不起来，所以本轮按该脚本的暂存布局**手工组装**了同样的
-> `release/SuperClip_v2.4.0.exe` 与 `_portable.zip`（内容＝exe + README + CHANGELOG + `installer\*.bat`）。
+> `release/SuperClip_v2.4.1.exe` 与 `_portable.zip`（内容＝exe + README + CHANGELOG + `installer\*.bat`）。
 > 两个后果：① 体积 **3.49 MB，超过技术方案 §10.3 的 3 MB 目标线**（那条线是按 MSVC `/MT` + 优化定的，
 > mingw 产物本来就更胖，`PackageRelease.bat` 对此只 warn 不拦）；② **步骤 12 B 段（MSVC 真实出包 +
 > 干净 VM 的 AC-7/AC-8 断网验收）没做**，操作单在 `cpp/scripts/ReleaseChecklist.md`。
@@ -182,7 +182,7 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 | 看被截断的全文 | 鼠标停在条上稍等（约 0.4 秒），气泡在**这条的上方**浮现全文（最多 2000 字），气泡文字比列表正文右移 3 个字宽 |
 | 移动 / 改大小 / 置顶 | 拖标题栏空白处；拖窗口边缘；点标题栏的图钉——图钉变蓝并带下划线＝已置顶（启动默认就是置顶） |
 | 打开项目页 | 单击底栏的 `by Mr lin`，交给系统默认浏览器打开本仓库页（程序自身不联网，见 [AC-8 边界裁决](doc/DESIGN.md)） |
-| 看使用教程 | 窗口内右键 →「使用帮助」，或按 `Apps` 键唤出菜单；`←`/`→` 翻页，`Esc` 关闭（共 10 步） |
+| 看使用教程 | 窗口内右键 →「使用帮助」，或按 `Apps` 键唤出菜单；`←`/`→` 翻页，`Esc` 关闭（共 9 步） |
 | 退出 | 标题栏 ✕ 或托盘菜单「退出」（每次入列、收藏、粘贴标记、清除、复位都会立刻写盘，退出时再兜底写一次；收起≠退出，收起后仍在记录） |
 
 ## 已知限制
@@ -192,9 +192,9 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 | 限制 | 具体表现 | 现状 |
 |---|---|---|
 | **接力在表格网格上贴不进去** | `Alt`+左键点 WPS/Excel 的**单元格**（只是选中、没进编辑态）时，日志显示"贴第 N 条"但网格里什么都不变。**双击进入单元格编辑态后接力可用**；记事本、浏览器输入框、`EDIT` 控件都正常 | v2.3.1/v2.3.2 两轮修改均**失败**，两个假设都被证伪；2026-10-06 项目所有者裁定**保持现状不再改**。完整调查记录见 [doc/PROJECT_STATE.md](doc/PROJECT_STATE.md) §4 坑 #20 |
-| **表格拆分跳过空格子** | 拆分按行优先，空行与空单元格会被跳过。源表格里有空格子时，条目数会少于格子数，按序逐格贴会与格位错开 | 设计上未改（改则动 FR-05 契约与既有历史语义）。缓解办法：接力前按"一格一条"复制。已写进使用帮助第 7 步 |
+| **表格拆分跳过空格子** | 拆分按行优先，空行与空单元格会被跳过。源表格里有空格子时，条目数会少于格子数，按序逐格贴会与格位错开 | 设计上未改（改则动 FR-05 契约与既有历史语义）。缓解办法：接力前按"一格一条"复制。已写进使用帮助「复制模式」那一步 |
 | **热键被占用时界面无提示** | `` Ctrl+` `` 或 `` Alt+` `` 被别的程序抢了，程序只写一行日志，界面上看不出来 | 未实现（契约 T5 的落点已备好 `ShowBalloon`，只差一个调用点）。呼出键失效时可**双击托盘图标** |
-| **接力兜底键没在界面上告知** | `` Alt+` `` 这把键此前只存在于日志与文档里 | **v2.4.0 已修**：使用帮助新增第 4 步「填表接力」，把 `Alt`+左键、生效条件、兜底键与上面那条表格限制全写清 |
+| **接力兜底键没在界面上告知** | `` Alt+` `` 这把键只存在于日志、README 与本文档里，**界面上没有提示** | **v2.4.0 曾修**（帮助窗加一页「填表接力」），**v2.4.1 又按用户决议删掉那一页**，于是回到"界面不告知"。可用性不受影响：README [常用操作](#常用操作)与[故障排查](#故障排查)都写了这把键 |
 | **Windows 7 / 8.1 未实机验证** | 代码以 Win7 SP1 为下限：`_WIN32_WINNT=0x0601`、静态 CRT、导入的 10 个 DLL 无一是 Win8+ 才有、所有新 API 都 `GetProcAddress` 探测 + 回退、`MOD_NOREPEAT` 两级退回。但 **Win7 上 `d2d1.dll`/`DWrite.dll` 来自平台更新 KB2670838**，缺它程序在加载器阶段就报 `0xc0000135`，连日志都写不出来 | **未验证**。另一处风险：界面硬写了字体 `Microsoft YaHei UI`，那是 Win8+ 字族，Win7 只有 `Microsoft YaHei` → DirectWrite 会静默回退，字能出来但字宽变了，自绘排版可能错位 |
 | **150% / 200% DPI 排版未复核** | 坐标以 DIP 存储、按当前缩放换算，但高缩放下的排版没逐屏看过 | 未验证（需要你改系统缩放才能复核） |
 | **MSVC 出包与干净 VM 验收未做** | 步骤 12 B 段：`dumpbin` 判据、≤3 MB 体积门、断网连贴 100 次、快照 VM 安装/卸载 | 未做，开发机无 SDK。操作单已写成可逐条执行的形式：`cpp/scripts/ReleaseChecklist.md` |
@@ -218,11 +218,11 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 
 ## 更新日志
 
-详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.4.0**（2026-10-06）。
+详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.4.1**（2026-10-06）。
 
 ## 许可证
 
-当前版本**还没有正式的开源许可证文件**，仓库里也没有 `LICENSE`。界面底栏的署名是 `v2.4.0  by Mr lin`，
+当前版本**还没有正式的开源许可证文件**，仓库里也没有 `LICENSE`。界面底栏的署名是 `v2.4.1  by Mr lin`，
 而 `cpp/src/res/app.rc` 的 `LegalCopyright` 是 `Copyright © SuperClip`（是否补署名待项目所有者裁决）。
 采用哪种许可证（MIT / GPL / 仅闭源分发）要由所有者确定后再补 `LICENSE`，并把 `LegalCopyright` 改成同一措辞。
 在此之前：**代码公开可读，但没有授予任何使用、修改、再分发的权利**。
@@ -241,7 +241,7 @@ Hand-rolled ~180-line JSON reader, BCrypt for SHA-256, statically linked CRT.
 No .NET, no Qt, no runtime prerequisites, **no network code at all** — the binary imports exactly 10 system
 DLLs and none of them is a networking library.
 
-**Quick start** — download `SuperClip_v2.4.0_portable.zip` from
+**Quick start** — download `SuperClip_v2.4.1_portable.zip` from
 [Releases](https://github.com/mylxnet/SuperClip-C/releases), unzip, run `SuperClip.exe`, press `Ctrl` + `` ` ``.
 Optionally run `installer\install.bat` as administrator for Start Menu / Desktop shortcuts.
 Uninstalling never deletes your history.
@@ -266,6 +266,6 @@ No uploads, no telemetry, no registry writes, no autostart. Pasting **does** ove
 **Build from source** — `cd cpp && build.bat` (VS2022) or `bash build-tests.sh` for the mingw cross-build;
 unit tests run on Windows: 42 cases / 228 assertions / 0 failures.
 
-**License** — no license file has been chosen yet. The app's status bar signs "v2.4.0  by Mr lin", while the
+**License** — no license file has been chosen yet. The app's status bar signs "v2.4.1  by Mr lin", while the
 version resource in `app.rc` reads "Copyright © SuperClip"; both the terms and that wording are the project
 owner's call. Until a `LICENSE` lands, the source is publicly readable but **no rights are granted**.
