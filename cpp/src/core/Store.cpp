@@ -96,6 +96,11 @@ void Store::AddFromClipboard(std::wstring_view text) {
   items_.insert(items_.begin() + long(at),          // 整块插入：逐条头插会整体倒序
                 std::make_move_iterator(fresh.begin()),
                 std::make_move_iterator(fresh.end()));
+  // 表格逐格去重可能带回 FR-02 迁移来的收藏项（isFavorite 由 TakeFavoriteIfDuplicate 赋回），
+  // 而 batch 内部次序是单元格顺序，收藏项未必排在最前 → 它在非收藏区中间时，
+  // [收藏区|非收藏区] 不变式被破坏，ClearAll 按"收藏数量"抹尾会误删收藏（违反 C12）。
+  // 本行与点★同语义（ToggleFavorite 亦走 ApplyOrder）恢复分区；整批皆非收藏时是幂等 no-op。
+  ApplyOrder();
   EnforceLimit();
   storage_.Save(items_);
   RebuildDisplay();

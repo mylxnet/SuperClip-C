@@ -22,11 +22,16 @@ ClipRead ReadLocked(std::wstring& out) {
     if (!raw) return ClipRead::Busy;
     const char* text = static_cast<const char*>(GlobalLock(raw));
     if (!text) return ClipRead::Busy;
-    const int wchars = MultiByteToWideChar(CP_ACP, 0, text, -1, nullptr, 0);
-    if (wchars > 1) {
-      out.resize(size_t(wchars) - 1);
-      MultiByteToWideChar(CP_ACP, 0, text, -1, out.data(), wchars - 1);
-    }
+    // 显式长度：所需宽字符数不含结尾 NUL，缓冲区与需求量精确相等（-1 版本含 NUL，
+    // 再按 wchars-1 传缓冲区会整段失败并留下全 \0 的假成功结果）
+    size_t len = 0;
+    const SIZE_T cap = GlobalSize(raw);
+    while (len < cap && text[len] != '\0') ++len;    // 不信生产方一定补了 NUL
+    if (len == 0) { GlobalUnlock(raw); return ClipRead::Empty; }
+    const int wchars = MultiByteToWideChar(CP_ACP, 0, text, int(len), nullptr, 0);
+    if (wchars <= 0) { GlobalUnlock(raw); return ClipRead::Empty; }
+    out.resize(size_t(wchars));
+    MultiByteToWideChar(CP_ACP, 0, text, int(len), out.data(), wchars);
     GlobalUnlock(raw);
     return out.empty() ? ClipRead::Empty : ClipRead::Ok;
   }

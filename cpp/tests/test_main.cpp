@@ -232,7 +232,7 @@ void L08_TableCellWithoutRowCol() {
   CHECK_EQ(item->SourceLabel(), L"");
 }
 
-// ============ §9.4 Store 不变式（16 例）============
+// ============ §9.4 Store 不变式（19 例）============
 
 void S01_DedupMigratesFavorite() {
   TempStore tmp("s01");
@@ -655,6 +655,45 @@ void S18_FavoriteStaysUntilNextRefresh() {
   CHECK(st3.Display().empty());
 }
 
+// P0-1 回归（2026-10-06）：表格逐格去重会把 FR-02 迁移来的收藏项带回本批，
+// 而整块插入按单元格顺序落位 → 收藏项可能落进非收藏区中间，破坏 [收藏区|非收藏区]
+// 不变式；此后 ClearAll 用"收藏数量"当分界抹尾，就会误删用户收藏（违反 C12）。
+void S19_TableBatchKeepsFavoritePartition() {
+  TempStore tmp("s19");
+  sc::Store store(tmp.storage());
+  store.AddFromClipboard(L"x");
+  store.AddFromClipboard(L"plain");                        // 集合 [plain x]
+  const sc::ClipItem* x = store.Collection()[1];
+  store.ToggleFavorite(x);                                 // → [x(收藏) plain]，分界 = 1
+  CHECK_EQ(store.Collection()[0]->content, L"x");
+  CHECK_EQ(store.Collection()[0]->isFavorite, true);
+  CHECK_EQ(store.Collection()[1]->content, L"plain");
+  CHECK_EQ(store.Collection()[1]->isFavorite, false);
+
+  store.AddFromClipboard(L"y\tx");                         // 格1 "y" 新增；格2 "x" 命中旧收藏 → 收藏态迁移
+  const auto col = store.Collection();
+  CHECK_EQ(col.size(), 3u);
+  CHECK_EQ(col[0]->content, L"x");                         // 分区不变式：收藏全部在前
+  CHECK_EQ(col[0]->isFavorite, true);
+  CHECK_EQ(col[1]->isFavorite, false);
+  CHECK_EQ(col[2]->isFavorite, false);
+
+  CHECK_EQ(store.ClearAll(), 2u);                          // 只清两条非收藏
+  CHECK_EQ(store.TotalCount(), 1u);
+  CHECK_EQ(store.Collection()[0]->content, L"x");          // C12：收藏还在
+  CHECK_EQ(store.Collection()[0]->isFavorite, true);
+
+  sc::Store reloaded(tmp.storage());                       // 落盘重载后分区仍成立
+  reloaded.LoadFromDisk();
+  CHECK_EQ(reloaded.Collection().size(), 1u);
+  CHECK_EQ(reloaded.Collection()[0]->content, L"x");
+  CHECK_EQ(reloaded.Collection()[0]->isFavorite, true);
+
+  reloaded.Reset();                                        // 复位后收藏区仍只含收藏
+  CHECK_EQ(reloaded.Collection().size(), 1u);
+  CHECK_EQ(reloaded.Collection()[0]->isFavorite, true);
+}
+
 // ============ §9.6 Settings（4 例）============// settings.json 与 .NET v2.0.2 互换读写的硬要求：键名、键序、null 语义都得逐字节对齐。
 std::string ReadAllBytes(const std::wstring& path) {
   HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
@@ -807,6 +846,7 @@ int main() {
   Run("§9.4-16 快速模式选中位钉第一行", S16_QuickModeAnchorsSelectionToFirstRow);
   Run("§9.4-17 接力取第一行与贴完即止（C15）", S17_RelayTakesFrontRowAndStopsWhenExhausted);
   Run("§9.4-18 点★暂留到下次刷新", S18_FavoriteStaysUntilNextRefresh);
+  Run("§9.4-19 表格批次不破坏收藏分区（P0-1 回归）", S19_TableBatchKeepsFavoritePartition);
 
   Run("§9.6-01 .NET 文件读入并逐字节写回", G01_DotNetFileReadsAndWritesBackIdentical);
   Run("§9.6-02 全字段往返（含绑定进程名）", G02_RoundTripWithBinding);

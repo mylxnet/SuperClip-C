@@ -4,7 +4,7 @@
 >
 > 复制过的内容它替你留着：一个全局热键呼出列表，选中即粘回你要的地方。不联网、不装运行库、数据只在你自己的机器上。
 
-版本 [v2.4.2](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
+版本 [v2.4.3](CHANGELOG.md) · 交付 单文件 exe · 网络 [零（需求红线 AC-8）](doc/DESIGN.md) · 授权 见[许可证](#许可证)
 
 **平台**：Windows 10 / 11（x64）**已实机走查**。Windows 7 SP1 – 8.1 是代码层面的设计下限
 （`_WIN32_WINNT = 0x0601`、所有 Win8+ API 都动态探测并带回退），**但从未在真机上跑过**，见
@@ -59,15 +59,15 @@
 
 ### 使用者（拿到即用）
 
-1. 到 [Releases](https://github.com/mylxnet/SuperClip-C/releases) 下载 `SuperClip_v2.4.2_portable.zip`，解压到任意目录。
+1. 到 [Releases](https://github.com/mylxnet/SuperClip-C/releases) 下载 `SuperClip_v2.4.3_portable.zip`，解压到任意目录。
 2. 双击 `SuperClip.exe`。托盘出现图标即已在后台记录，无需其他设置。
 3. 在任何应用里按 `Ctrl` + `` ` ``（数字 1 左边那个键）呼出列表，双击一条粘到光标处。
 
 > **这个包是怎么构建的（务必先看）**：附件里的 `SuperClip.exe` 由 **mingw-w64 在 WSL 里交叉编译**产出，
 > 不是 MSVC 构建。原因是开发机上没有 Visual Studio 与 Windows SDK，`cpp/scripts/PackageRelease.bat`
 > 的第 1 步（`CleanAndBuild.bat` → `vcvars64.bat`）跑不起来，所以本轮按该脚本的暂存布局**手工组装**了同样的
-> `release/SuperClip_v2.4.2.exe` 与 `_portable.zip`（内容＝exe + README + CHANGELOG + `installer\*.bat`）。
-> 两个后果：① 体积 **3,663,957 B（≈3.49 MB，v2.4.2 mingw 交叉件实测），超过技术方案 §10.3 的 3 MB 目标线**（那条线是按 MSVC `/MT` + 优化定的，
+> `release/SuperClip_v2.4.3.exe` 与 `_portable.zip`（内容＝exe + README + CHANGELOG + `installer\*.bat`）。
+> 两个后果：① 体积 **3,664,147 B（≈3.49 MB，v2.4.3 mingw 交叉件实测），超过技术方案 §10.3 的 3 MB 目标线**（那条线是按 MSVC `/MT` + 优化定的，
 > mingw 产物本来就更胖，`PackageRelease.bat` 对此只 warn 不拦）；② **步骤 12 B 段（MSVC 真实出包 +
 > 干净 VM 的 AC-7/AC-8 断网验收）没做**，操作单在 `cpp/scripts/ReleaseChecklist.md`。
 > 功能与逻辑层单测都已在 Windows 实机跑过，但"正式发布产物"这条链是断的。
@@ -93,7 +93,7 @@ scripts\PackageRelease.bat   # 出版本化 exe + portable zip（本机无 SDK�
 cd cpp
 bash build-tests.sh  # 产出 build-mingw/{SuperClip.exe, sc_tests.exe}，把 exe 拿回 Windows 跑
 
-# 在 Windows 侧执行测试，预期"用例 43，断言 246 项，失败 0 项 → 全部通过"
+# 在 Windows 侧执行测试，预期"用例 44，断言 264 项，失败 0 项 → 全部通过"
 build-mingw\sc_tests.exe
 ```
 
@@ -119,7 +119,7 @@ build-mingw\sc_tests.exe
 | 数据 | 自研极简 JSON（约 180 行） | 字段与 .NET v2.0.2 完全一致，两版可直接接管同一份历史 |
 | 哈希 | BCrypt（`bcrypt.dll`） | SHA-256 去重；系统组件，不引第三方库 |
 | 构建 | CMake 3.20 + MSVC，或 mingw-w64 交叉 | 静态 CRT（`-static` / `/MT`），交付物单文件 |
-| 测试 | `tests/test_main.cpp` 自带极简断言器 | 43 例覆盖纯逻辑层；UI 与粘贴行为靠实机走查（`cpp/qa/*.ps1`） |
+| 测试 | `tests/test_main.cpp` 自带极简断言器 | 44 例覆盖纯逻辑层；UI 与粘贴行为靠实机走查（`cpp/qa/*.ps1`） |
 
 **产物只导入 10 个系统 DLL**：`bcrypt` `d2d1` `DWrite` `GDI32` `KERNEL32` `msvcrt` `ole32` `SHELL32` `USER32` `WTSAPI32`。
 其中**网络库 0 个**——这是 AC-8 的静态旁证（`objdump -p` / `dumpbin /dependents` 都能复核）。
@@ -146,7 +146,7 @@ cpp/                         主代码目录
   build.bat                  MSVC 构建入口
   build-tests.sh             WSL/Linux mingw 交叉构建
   src/                       core（纯逻辑）· native（Win32 RAII）· services · ui · app · res · util
-  tests/test_main.cpp        纯逻辑单测（43 例 / 246 断言）
+  tests/test_main.cpp        纯逻辑单测（44 例 / 264 断言）
   tools/PasteTarget.cpp      粘贴闭环走查用的极简目标程序
   qa/*.ps1                   实机走查驱动（内容一律 ASCII）
   scripts/                   发布与验收脚本（CleanAndBuild / PackageRelease / ReleaseChecklist / make-icon）
@@ -218,11 +218,11 @@ doc/                         文档（另有一个 images/ 子目录放本文配
 
 ## 更新日志
 
-详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.4.2**（2026-10-06）。
+详见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v2.4.3**（2026-10-06）。
 
 ## 许可证
 
-当前版本**还没有正式的开源许可证文件**，仓库里也没有 `LICENSE`。界面底栏的署名是 `v2.4.2  by Mr lin`，
+当前版本**还没有正式的开源许可证文件**，仓库里也没有 `LICENSE`。界面底栏的署名是 `v2.4.3  by Mr lin`，
 而 `cpp/src/res/app.rc` 的 `LegalCopyright` 是 `Copyright © SuperClip`（是否补署名待项目所有者裁决）。
 采用哪种许可证（MIT / GPL / 仅闭源分发）要由所有者确定后再补 `LICENSE`，并把 `LegalCopyright` 改成同一措辞。
 在此之前：**代码公开可读，但没有授予任何使用、修改、再分发的权利**。
@@ -241,7 +241,7 @@ Hand-rolled ~180-line JSON reader, BCrypt for SHA-256, statically linked CRT.
 No .NET, no Qt, no runtime prerequisites, **no network code at all** — the binary imports exactly 10 system
 DLLs and none of them is a networking library.
 
-**Quick start** — download `SuperClip_v2.4.2_portable.zip` from
+**Quick start** — download `SuperClip_v2.4.3_portable.zip` from
 [Releases](https://github.com/mylxnet/SuperClip-C/releases), unzip, run `SuperClip.exe`, press `Ctrl` + `` ` ``.
 Optionally run `installer\install.bat` as administrator for Start Menu / Desktop shortcuts.
 Uninstalling never deletes your history.
@@ -264,8 +264,8 @@ No uploads, no telemetry, no registry writes, no autostart. Pasting **does** ove
 (that is how `Ctrl+V` is delivered). Your clipboard may contain secrets, so treat that folder like a password file.
 
 **Build from source** — `cd cpp && build.bat` (VS2022) or `bash build-tests.sh` for the mingw cross-build;
-unit tests run on Windows: 43 cases / 246 assertions / 0 failures.
+unit tests run on Windows: 44 cases / 264 assertions / 0 failures.
 
-**License** — no license file has been chosen yet. The app's status bar signs "v2.4.2  by Mr lin", while the
+**License** — no license file has been chosen yet. The app's status bar signs "v2.4.3  by Mr lin", while the
 version resource in `app.rc` reads "Copyright © SuperClip"; both the terms and that wording are the project
 owner's call. Until a `LICENSE` lands, the source is publicly readable but **no rights are granted**.

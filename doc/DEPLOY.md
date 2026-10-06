@@ -1,6 +1,6 @@
 # SuperClip（C++ 版）部署与运维
 
-> 对应产品 **v2.4.2**（部署面自 v2.0.3 以来只变过三处：接力兜底热键的键位，见 §5；exe 的「文件说明」由乱码修回中文，见 §7；**v2.4.0 起 GitHub Release 的附件是 mingw 交叉构建件**（本机无 MSVC/SDK，用户裁定，超 3 MB 体积门，见 §1 与 `CHANGELOG.md` v2.4.0 段）。帮助窗步数 9→10→9 的来回属界面文案，不改变部署面；**v2.4.2 只改收藏交互**（点★后条目暂留到下次刷新，见 `doc/DESIGN.md` §0.1 C10），**不涉部署面**）。本文只写"已经在代码或实机上证实过"的行为；凡未跑过的判据一律标 **未验证**，
+> 对应产品 **v2.4.3**（部署面自 v2.0.3 以来只变过三处：接力兜底热键的键位，见 §5；exe 的「文件说明」由乱码修回中文，见 §7；**v2.4.0 起 GitHub Release 的附件是 mingw 交叉构建件**（本机无 MSVC/SDK，用户裁定，超 3 MB 体积门，见 §1 与 `CHANGELOG.md` v2.4.0 段）。帮助窗步数 9→10→9 的来回属界面文案，不改变部署面；**v2.4.2 只改收藏交互**（点★后条目暂留到下次刷新，见 `doc/DESIGN.md` §0.1 C10）；**v2.4.3 只修两处错误路径**（表格批次破坏收藏分区致「清除」误删收藏、`CF_TEXT` 分支读回来全空字符），两者**均不涉部署面**）。本文只写"已经在代码或实机上证实过"的行为；凡未跑过的判据一律标 **未验证**，
 > 并与已验证项分开列。步骤 12 的正式验收证据链在 `cpp/scripts/ReleaseChecklist.md`，本文不重复。
 
 ## 1. 两种交付形态
@@ -16,7 +16,7 @@
 **v2.4.0 起 Release 附件的来源变了**：本机没有 MSVC/Windows SDK，`PackageRelease.bat` 第一步（`CleanAndBuild.bat`
 → `vcvars64.bat`）跑不了；用户裁定 GitHub Release 的附件改用 **WSL mingw 交叉构建件**手组装（stage 布局与
 `PackageRelease.bat` 完全一致：`SuperClip.exe` + `README.md` + `CHANGELOG.md` + `installer\*.bat`）。
-它超 3 MB 体积门（v2.4.2 mingw 交叉件实测 3,663,957 B ≈ 3.49 MB），按 `ReleaseChecklist.md` §6 本该走 B→A→C 降级，本轮等于**直接停在
+它超 3 MB 体积门（v2.4.3 mingw 交叉件实测 3,664,147 B ≈ 3.49 MB），按 `ReleaseChecklist.md` §6 本该走 B→A→C 降级，本轮等于**直接停在
 "非 MSVC 件"这一档并如实标注**；README「快速开始」有同一个醒目块。拿到这份件的安装/卸载/数据接管流程与
 MSVC 件**没有任何差别**（同一份源码、同一份资源、静态 CRT、导入表 10 个系统 DLL 零网络库）。
 
